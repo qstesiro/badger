@@ -122,9 +122,9 @@ func (db *DB) openMemTable(fid, flags int) (*memTable, error) {
 
 	mt.wal = &logFile{
 		fid:      uint32(fid),
-		path:     filepath,
+		path:     filepath, // 扩展名.mem
 		registry: db.registry,
-		writeAt:  vlogHeaderSize,
+		writeAt:  vlogHeaderSize, // 20字节,赋值应该与实际写入代码在就近原则 ???
 		opt:      db.opt,
 	}
 	lerr := mt.wal.open(filepath, flags, 2*db.opt.MemTableSize)
@@ -556,7 +556,7 @@ func (lf *logFile) open(path string, flags int, fsize int64) error {
 			os.Remove(path)
 			return err
 		}
-		lf.size.Store(vlogHeaderSize)
+		lf.size.Store(vlogHeaderSize) // 多余的赋值 ???
 
 	} else if ferr != nil {
 		return y.Wrapf(ferr, "while opening file: %s", path)
