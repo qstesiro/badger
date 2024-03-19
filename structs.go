@@ -50,7 +50,7 @@ func (p valuePointer) IsZero() bool {
 func (p valuePointer) Encode() []byte {
 	b := make([]byte, vptrSize)
 	// Copy over the content from p to b.
-	*(*valuePointer)(unsafe.Pointer(&b[0])) = p
+	*(*valuePointer)(unsafe.Pointer(&b[0])) = p // 处理方式后续研究 ~~~
 	return b
 }
 
@@ -59,7 +59,7 @@ func (p *valuePointer) Decode(b []byte) {
 	// Copy over data from b into p. Using *p=unsafe.pointer(...) leads to
 	// pointer alignment issues. See https://github.com/dgraph-io/badger/issues/1096
 	// and comment https://github.com/dgraph-io/badger/pull/1097#pullrequestreview-307361714
-	copy(((*[vptrSize]byte)(unsafe.Pointer(p))[:]), b[:vptrSize])
+	copy(((*[vptrSize]byte)(unsafe.Pointer(p))[:]), b[:vptrSize]) // 处理方式后续研究 ~~~
 }
 
 // header is used in value log as a header before Entry.
