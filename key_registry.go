@@ -291,7 +291,7 @@ func WriteKeyRegistry(reg *KeyRegistry, opt KeyRegistryOptions) error {
 		return y.Wrapf(err, "Error while renaming file in WriteKeyRegistry")
 	}
 	// Sync Dir.
-	return syncDir(opt.Dir)
+	return syncDir(opt.Dir) // 同步磁盘
 }
 
 // DataKey returns datakey of the given key id.
@@ -408,7 +408,7 @@ func storeDataKey(buf *bytes.Buffer, storageKey []byte, k *pb.DataKey) error {
 		err = y.Wrapf(err, "Error while marshaling datakey in storeDataKey")
 		var err2 error
 		// decrypting the datakey back.
-		if err2 = xor(); err2 != nil {
+		if err2 = xor(); err2 != nil { // 返回错误前xor恢复明文数据
 			return y.Wrapf(err,
 				y.Wrapf(err2, "Error while decrypting datakey in storeDataKey").Error())
 		}
@@ -420,5 +420,5 @@ func storeDataKey(buf *bytes.Buffer, storageKey []byte, k *pb.DataKey) error {
 	y.Check2(buf.Write(lenCrcBuf[:]))
 	y.Check2(buf.Write(data))
 	// Decrypting the datakey back since we're using the pointer.
-	return xor()
+	return xor() // 恢复明文数据
 }

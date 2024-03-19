@@ -269,7 +269,7 @@ type logFile struct {
 	// exclusive ownership to open/close the descriptor, unmap or remove the file.
 	lock     sync.RWMutex
 	fid      uint32
-	size     atomic.Uint32
+	size     atomic.Uint32 // 数据量的大小
 	dataKey  *pb.DataKey
 	baseIV   []byte
 	registry *KeyRegistry
@@ -293,6 +293,10 @@ func (lf *logFile) Truncate(end int64) error {
 // +--------+-----+-------+-------+
 // | header | key | value | crc32 |
 // +--------+-----+-------+-------+
+// layout of header
+// +------+----------+------------+--------------+-----------+
+// | Meta | UserMeta | Key Length | Value Length | ExpiresAt |
+// +------+----------+------------+--------------+-----------+
 func (lf *logFile) encodeEntry(buf *bytes.Buffer, e *Entry, offset uint32) (int, error) {
 	h := header{
 		klen:      uint32(len(e.Key)),
@@ -335,7 +339,7 @@ func (lf *logFile) encodeEntry(buf *bytes.Buffer, e *Entry, offset uint32) (int,
 }
 
 func (lf *logFile) writeEntry(buf *bytes.Buffer, e *Entry, opt Options) error {
-	buf.Reset()
+	buf.Reset() // 重置缓存
 	plen, err := lf.encodeEntry(buf, e, lf.writeAt)
 	if err != nil {
 		return err

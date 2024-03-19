@@ -23,6 +23,7 @@ import (
 	"unsafe"
 )
 
+// Len与Offset位置互换是否更符合习惯 ???
 type valuePointer struct {
 	Fid    uint32
 	Len    uint32

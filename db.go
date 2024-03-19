@@ -847,7 +847,7 @@ func (db *DB) writeRequests(reqs []*request) error {
 		}
 	}
 	db.opt.Debugf("writeRequests called. Writing to value log")
-	err := db.vlog.write(reqs)
+	err := db.vlog.write(reqs) // 写vlog
 	if err != nil {
 		done(err)
 		return err
