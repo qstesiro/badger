@@ -122,12 +122,12 @@ func (db *DB) openMemTable(fid, flags int) (*memTable, error) {
 
 	mt.wal = &logFile{
 		fid:      uint32(fid),
-		path:     filepath, // 扩展名.mem
+		path:     filepath, // 名称(5位).mem
 		registry: db.registry,
 		writeAt:  vlogHeaderSize, // 20字节,赋值应该与实际写入代码在就近原则 ???
 		opt:      db.opt,
 	}
-	lerr := mt.wal.open(filepath, flags, 2*db.opt.MemTableSize)
+	lerr := mt.wal.open(filepath, flags, 2*db.opt.MemTableSize) // 128M
 	if lerr != z.NewFile && lerr != nil {
 		return nil, y.Wrapf(lerr, "While opening memtable: %s", filepath)
 	}

@@ -332,12 +332,12 @@ func Open(opt Options) (*DB, error) {
 	db.closers.updateSize = z.NewCloser(1)
 	go db.updateSize(db.closers.updateSize)
 
-	if err := db.openMemTables(db.opt); err != nil {
+	if err := db.openMemTables(db.opt); err != nil { // 装载不可变内存表
 		return nil, y.Wrapf(err, "while opening memtables")
 	}
 
 	if !db.opt.ReadOnly {
-		if db.mt, err = db.newMemTable(); err != nil {
+		if db.mt, err = db.newMemTable(); err != nil { // 创建可变内存表
 			return nil, y.Wrapf(err, "cannot create memtable")
 		}
 	}
@@ -367,7 +367,7 @@ func Open(opt Options) (*DB, error) {
 	db.orc.nextTxnTs = db.MaxVersion()
 	db.opt.Infof("Set nextTxnTs to %d", db.orc.nextTxnTs)
 
-	if err = db.vlog.open(db); err != nil {
+	if err = db.vlog.open(db); err != nil { // 装载已存在日志文件并创建新的日志文件
 		return db, y.Wrapf(err, "During db.vlog.open")
 	}
 

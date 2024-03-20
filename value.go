@@ -483,7 +483,7 @@ func (vlog *valueLog) populateFilesMap() error {
 			continue
 		}
 		fsz := len(file.Name())
-		fid, err := strconv.ParseUint(file.Name()[:fsz-5], 10, 32)
+		fid, err := strconv.ParseUint(file.Name()[:fsz-5], 10, 32) // 文件名(不包含扩展名)
 		if err != nil {
 			return errFile(err, file.Name(), "Unable to parse log id.")
 		}
@@ -515,15 +515,15 @@ func (vlog *valueLog) createVlogFile() (*logFile, error) {
 		writeAt:  vlogHeaderSize,
 		opt:      vlog.opt,
 	}
-	err := lf.open(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 2*vlog.opt.ValueLogFileSize)
+	err := lf.open(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 2*vlog.opt.ValueLogFileSize) // 2G
 	if err != z.NewFile && err != nil {
 		return nil, err
 	}
 
 	vlog.filesLock.Lock()
-	vlog.filesMap[fid] = lf
+	vlog.filesMap[fid] = lf // 加入map中
 	y.AssertTrue(vlog.maxFid < fid)
-	vlog.maxFid = fid
+	vlog.maxFid = fid // 设置最大fid
 	// writableLogOffset is only written by write func, by read by Read func.
 	// To avoid a race condition, all reads and updates to this variable must be
 	// done via atomics.
@@ -605,18 +605,20 @@ func (vlog *valueLog) open(db *DB) error {
 	// log open.
 	last, ok := vlog.filesMap[vlog.maxFid]
 	y.AssertTrue(ok)
-	lastOff, err := last.iterate(vlog.opt.ReadOnly, vlogHeaderSize,
+	lastOff, err := last.iterate(vlog.opt.ReadOnly, vlogHeaderSize, // 获取最后一个文件的结束位置
 		func(_ Entry, vp valuePointer) error {
 			return nil
 		})
 	if err != nil {
 		return y.Wrapf(err, "while iterating over: %s", last.path)
 	}
-	if err := last.Truncate(int64(lastOff)); err != nil {
+	if err := last.Truncate(int64(lastOff)); err != nil { // 从最后位置截断
 		return y.Wrapf(err, "while truncating last value log file: %s", last.path)
 	}
 
 	// Don't write to the old log file. Always create a new one.
+	// 总是创建新的vlog文件 ???
+	// 创建的新logFile会被加入到filesMap中
 	if _, err := vlog.createVlogFile(); err != nil {
 		return y.Wrapf(err, "Error while creating log file in valueLog.open")
 	}

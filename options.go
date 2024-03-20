@@ -138,9 +138,9 @@ func DefaultOptions(path string) Options {
 		Dir:      path,
 		ValueDir: path,
 
-		MemTableSize:        64 << 20,
-		BaseTableSize:       2 << 20,
-		BaseLevelSize:       10 << 20,
+		MemTableSize:        64 << 20, // 64M
+		BaseTableSize:       2 << 20,  // 2M
+		BaseLevelSize:       10 << 20, // 10M
 		TableSizeMultiplier: 2,
 		LevelSizeMultiplier: 10,
 		MaxLevels:           7,
@@ -152,13 +152,13 @@ func DefaultOptions(path string) Options {
 		NumLevelZeroTablesStall: 15,
 		NumMemtables:            5,
 		BloomFalsePositive:      0.01,
-		BlockSize:               4 * 1024,
+		BlockSize:               4 * 1024, // 4K
 		SyncWrites:              false,
 		NumVersionsToKeep:       1,
 		CompactL0OnClose:        false,
 		VerifyValueChecksum:     false,
 		Compression:             options.Snappy,
-		BlockCacheSize:          256 << 20,
+		BlockCacheSize:          256 << 20, // 256M
 		IndexCacheSize:          0,
 
 		// The following benchmarks were done on a 4 KB block size (default block size). The
@@ -177,12 +177,12 @@ func DefaultOptions(path string) Options {
 		// MemoryMap to mmap() the value log files
 		// (2^30 - 1)*2 when mmapping < 2^31 - 1, max int32.
 		// -1 so 2*ValueLogFileSize won't overflow on 32-bit systems.
-		ValueLogFileSize: 1<<30 - 1,
+		ValueLogFileSize: 1<<30 - 1, // 1G
 
-		ValueLogMaxEntries: 1000000,
+		ValueLogMaxEntries: 1000000, // ~1M
 
 		VLogPercentile: 0.0,
-		ValueThreshold: maxValueThreshold,
+		ValueThreshold: maxValueThreshold, // 1M
 
 		Logger:                        defaultLogger(INFO),
 		EncryptionKey:                 []byte{},
