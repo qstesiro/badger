@@ -829,7 +829,7 @@ func (db *DB) writeToLSM(b *request) error {
 		}
 	}
 	if db.opt.SyncWrites {
-		return db.mt.SyncWAL()
+		return db.mt.SyncWAL() // 同步磁盘
 	}
 	return nil
 }

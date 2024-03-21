@@ -839,15 +839,15 @@ func (vlog *valueLog) write(reqs []*request) error {
 	toDisk := func() error {
 		if vlog.woffset() > uint32(vlog.opt.ValueLogFileSize) ||
 			vlog.numEntriesWritten > vlog.opt.ValueLogMaxEntries {
-			if err := curlf.doneWriting(vlog.woffset()); err != nil {
+			if err := curlf.doneWriting(vlog.woffset()); err != nil { // 数据同步磁盘
 				return err
 			}
 
-			newlf, err := vlog.createVlogFile()
+			newlf, err := vlog.createVlogFile() // 创建新vlog文件
 			if err != nil {
 				return err
 			}
-			curlf = newlf
+			curlf = newlf // 设置当前vlog
 		}
 		return nil
 	}
@@ -863,7 +863,7 @@ func (vlog *valueLog) write(reqs []*request) error {
 
 			e := b.Entries[j]
 			valueSizes = append(valueSizes, int64(len(e.Value)))
-			if e.skipVlogAndSetThreshold(vlog.db.valueThreshold()) {
+			if e.skipVlogAndSetThreshold(vlog.db.valueThreshold()) { // 判定阈值是否跳过
 				b.Ptrs = append(b.Ptrs, valuePointer{})
 				continue
 			}
@@ -888,7 +888,7 @@ func (vlog *valueLog) write(reqs []*request) error {
 
 			p.Len = uint32(plen)
 			b.Ptrs = append(b.Ptrs, p)
-			if err := write(buf); err != nil {
+			if err := write(buf); err != nil { // 写入数据
 				return err
 			}
 			written++
@@ -898,11 +898,11 @@ func (vlog *valueLog) write(reqs []*request) error {
 		y.NumWritesVlogAdd(vlog.opt.MetricsEnabled, int64(written))
 		y.NumBytesWrittenVlogAdd(vlog.opt.MetricsEnabled, int64(bytesWritten))
 
-		vlog.numEntriesWritten += uint32(written)
-		vlog.db.threshold.update(valueSizes)
+		vlog.numEntriesWritten += uint32(written) // 更新已写项
+		vlog.db.threshold.update(valueSizes)      // 更新阈值
 		// We write to disk here so that all entries that are part of the same transaction are
 		// written to the same vlog file.
-		if err := toDisk(); err != nil {
+		if err := toDisk(); err != nil { // 落地磁盘
 			return err
 		}
 	}
