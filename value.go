@@ -893,7 +893,7 @@ func (vlog *valueLog) write(reqs []*request) error {
 			}
 			written++
 			bytesWritten += buf.Len()
-			// No need to flush anything, we write to file directly via mmap.
+			// No need to flush anything, we write to file directly via mmap. 不需要同步吗 ???
 		}
 		y.NumWritesVlogAdd(vlog.opt.MetricsEnabled, int64(written))
 		y.NumBytesWrittenVlogAdd(vlog.opt.MetricsEnabled, int64(bytesWritten))
@@ -1150,7 +1150,7 @@ func initVlogThreshold(opt *Options) *vlogThreshold {
 	lt := &vlogThreshold{
 		logger:     opt.Logger,
 		percentile: opt.VLogPercentile,
-		valueCh:    make(chan []int64, 1000),
+		valueCh:    make(chan []int64, 1000), // 缓冲是不是有点小 ???
 		clearCh:    make(chan bool, 1),
 		closer:     z.NewCloser(1),
 		vlMetrics:  z.NewHistogramData(getBounds()),
