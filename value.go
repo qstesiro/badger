@@ -1185,6 +1185,7 @@ func (v *vlogThreshold) listenForValueThresholdUpdate() {
 			// we are making it to get Options.VlogPercentile so that values with sizes
 			// in range of Options.VlogPercentile will make it to the LSM tree and rest to the
 			// value log file.
+			// 参考https://pkg.go.dev/github.com/dgraph-io/badger/v4#Options.WithVLogPercentile文档
 			p := int64(v.vlMetrics.Percentile(v.percentile))
 			if v.valueThreshold.Load() != p {
 				if v.logger != nil {
