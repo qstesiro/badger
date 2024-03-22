@@ -847,7 +847,11 @@ func (db *DB) writeRequests(reqs []*request) error {
 		}
 	}
 	db.opt.Debugf("writeRequests called. Writing to value log")
-	err := db.vlog.write(reqs) // 写vlog
+	// 完成所有reqs的写入后才会落盘,而wal写入落盘是每个req,
+	// 所以可能导致vlog写入数据一定是多于wal存储,
+	// 重新启动后总会创建一个新的vlog,所以wal恢复数据会写入新的vlog
+	// 前一次的vlog中多余的数据不会被使用
+	err := db.vlog.write(reqs)
 	if err != nil {
 		done(err)
 		return err

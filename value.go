@@ -808,7 +808,7 @@ func (vlog *valueLog) write(reqs []*request) error {
 
 	defer func() {
 		if vlog.opt.SyncWrites {
-			if err := curlf.Sync(); err != nil {
+			if err := curlf.Sync(); err != nil { // 落盘
 				vlog.opt.Errorf("Error while curlf sync: %v\n", err)
 			}
 		}
@@ -1033,9 +1033,9 @@ LOOP:
 			discard, thr, fi.Name())
 		return nil
 	}
-	if fid < vlog.maxFid {
+	if fid < vlog.maxFid { // 不GC当前最新的vlog
 		vlog.opt.Infof("Found value log max discard fid: %d discard: %d\n", fid, discard)
-		lf, ok := vlog.filesMap[fid]
+		lf, ok := vlog.filesMap[fid] // 为什么要再获取一次,直接使用lf不行吗 ???
 		y.AssertTrue(ok)
 		return lf
 	}
@@ -1087,10 +1087,10 @@ func (vlog *valueLog) waitOnGC(lc *z.Closer) {
 
 func (vlog *valueLog) runGC(discardRatio float64) error {
 	select {
-	case vlog.garbageCh <- struct{}{}:
+	case vlog.garbageCh <- struct{}{}: // 当前如果正在进行GC会阻断执行
 		// Pick a log file for GC.
 		defer func() {
-			<-vlog.garbageCh
+			<-vlog.garbageCh // 恢复可执行GC状态
 		}()
 
 		lf := vlog.pickLog(discardRatio)
