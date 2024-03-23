@@ -1027,23 +1027,23 @@ func (db *DB) ensureRoomForWrite() error {
 	defer db.lock.Unlock()
 
 	y.AssertTrue(db.mt != nil) // A nil mt indicates that DB is being closed.
-	if !db.mt.isFull() {
+	if !db.mt.isFull() {       // 当前内存表未满
 		return nil
 	}
 
-	select {
-	case db.flushChan <- db.mt:
+	select { // 内存表已满
+	case db.flushChan <- db.mt: // 更新可变内存表表为不可变内存表
 		db.opt.Debugf("Flushing memtable, mt.size=%d size of flushChan: %d\n",
 			db.mt.sl.MemSize(), len(db.flushChan))
 		// We manage to push this task. Let's modify imm.
-		db.imm = append(db.imm, db.mt)
-		db.mt, err = db.newMemTable()
+		db.imm = append(db.imm, db.mt) // 添加到不可变内存列表
+		db.mt, err = db.newMemTable()  // 创建新的内存表
 		if err != nil {
 			return y.Wrapf(err, "cannot create new mem table")
 		}
 		// New memtable is empty. We certainly have room.
 		return nil
-	default:
+	default: // 暂时无法创建
 		// We need to do this to unlock and allow the flusher to modify imm.
 		return errNoRoom
 	}
