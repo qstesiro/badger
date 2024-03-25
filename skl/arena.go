@@ -35,7 +35,7 @@ const (
 
 // Arena should be lock-free.
 type Arena struct {
-	n   atomic.Uint32
+	n   atomic.Uint32 // 最大4G
 	buf []byte
 }
 

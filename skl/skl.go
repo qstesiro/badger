@@ -183,6 +183,7 @@ func (s *Skiplist) getNext(nd *node, height int) *node {
 // If less=false, it finds leftmost node such that node.key > key (if allowEqual=false) or
 // node.key >= key (if allowEqual=true).
 // Returns the node found. The bool returned is true if the node has key equal to given key.
+// 算法处理太漂亮了 !!!
 func (s *Skiplist) findNear(key []byte, less bool, allowEqual bool) (*node, bool) {
 	x := s.head
 	level := int(s.getHeight() - 1)
@@ -197,14 +198,14 @@ func (s *Skiplist) findNear(key []byte, less bool, allowEqual bool) (*node, bool
 				continue
 			}
 			// Level=0. Cannot descend further. Let's return something that makes sense.
-			if !less {
+			if !less { // level == 0 and >
 				return nil, false
 			}
 			// Try to return x. Make sure it is not a head node.
-			if x == s.head {
+			if x == s.head { // level == 0 and <
 				return nil, false
 			}
-			return x, false
+			return x, false // level == 0 and <
 		}
 
 		nextKey := next.key(s.arena)
@@ -221,24 +222,25 @@ func (s *Skiplist) findNear(key []byte, less bool, allowEqual bool) (*node, bool
 			}
 			if !less {
 				// We want >, so go to base level to grab the next bigger note.
-				return s.getNext(next, 0), false
+				return s.getNext(next, 0), false // 直接获取0层中的后继元素
 			}
 			// We want <. If not base level, we should go closer in the next level.
-			if level > 0 {
+			if level > 0 { // x < key 需要进一步查看下一层
 				level--
 				continue
 			}
 			// On base level. Return x.
-			if x == s.head {
+			if x == s.head { // level == 0
 				return nil, false
 			}
-			return x, false
+			return x, false // level == 0 and x != head
 		}
 		// cmp < 0. In other words, x.key < key < next.
 		if level > 0 {
 			level--
 			continue
 		}
+		// level == 0
 		// At base level. Need to return something.
 		if !less {
 			return next, false
@@ -259,20 +261,20 @@ func (s *Skiplist) findSpliceForLevel(key []byte, before *node, level int) (*nod
 	for {
 		// Assume before.key < key.
 		next := s.getNext(before, level)
-		if next == nil {
-			return before, next
+		if next == nil { // 当前层所有key都小于要查找的key
+			return before, next // before=当前层最后一个元素,next=nil
 		}
 		nextKey := next.key(s.arena)
 		cmp := y.CompareKeys(key, nextKey)
-		if cmp == 0 {
+		if cmp == 0 { // key == nextKey
 			// Equality case.
 			return next, next
 		}
-		if cmp < 0 {
+		if cmp < 0 { // key < nextKey
 			// before.key < key < next.key. We are done for this level.
 			return before, next
 		}
-		before = next // Keep moving right on this level.
+		before = next // key > nextKey, Keep moving right on this level.
 	}
 }
 
@@ -281,6 +283,7 @@ func (s *Skiplist) getHeight() int32 {
 }
 
 // Put inserts the key-value pair.
+// 算法设计实现太漂亮了,自愧不如 !!!
 func (s *Skiplist) Put(key []byte, v y.ValueStruct) {
 	// Since we allow overwrite, we may not need to create a new node. We might not even need to
 	// increase the height. Let's defer these actions.
@@ -290,15 +293,19 @@ func (s *Skiplist) Put(key []byte, v y.ValueStruct) {
 	var next [maxHeight + 1]*node
 	prev[listHeight] = s.head
 	next[listHeight] = nil
+	// 以下循环不仅查找key是否已存在而且对prev,next数组进行填充
+	// 为后续要增加的新节点构建索引层做了准备,算法设计非常巧妙 !!!
 	for i := int(listHeight) - 1; i >= 0; i-- {
 		// Use higher level to speed up for current level.
 		prev[i], next[i] = s.findSpliceForLevel(key, prev[i+1], i)
-		if prev[i] == next[i] {
+		if prev[i] == next[i] { // key已经存在
 			prev[i].setValue(s.arena, v)
 			return
 		}
 	}
 
+	// key不存在,需要创建新的node
+	// 如果i<=listHeight,prev[i]不可能为nil,next[i]可能为nil
 	// We do need to create a new node.
 	height := s.randomHeight()
 	x := newNode(s.arena, key, v, height)
@@ -317,11 +324,11 @@ func (s *Skiplist) Put(key []byte, v y.ValueStruct) {
 	// create a node in the level above because it would have discovered the node in the base level.
 	for i := 0; i < height; i++ {
 		for {
-			if prev[i] == nil {
+			if prev[i] == nil { // 只有新height>=旧height且i>旧height情况下触发
 				y.AssertTrue(i > 1) // This cannot happen in base level.
 				// We haven't computed prev, next for this level because height exceeds old listHeight.
 				// For these levels, we expect the lists to be sparse, so we can just search from head.
-				prev[i], next[i] = s.findSpliceForLevel(key, s.head, i)
+				prev[i], next[i] = s.findSpliceForLevel(key, s.head, i) // prev[i]==s.head,next[i]=nil
 				// Someone adds the exact same key before we are able to do so. This can only happen on
 				// the base level. But we know we are not on the base level.
 				y.AssertTrue(prev[i] != next[i])
@@ -335,6 +342,7 @@ func (s *Skiplist) Put(key []byte, v y.ValueStruct) {
 			// CAS failed. We need to recompute prev and next.
 			// It is unlikely to be helpful to try to use a different level as we redo the search,
 			// because it is unlikely that lots of nodes are inserted between prev[i] and next[i].
+			// 数据写入是并行执行所以有可能导致cas失败,虽然可能性很小
 			prev[i], next[i] = s.findSpliceForLevel(key, prev[i], i)
 			if prev[i] == next[i] {
 				y.AssertTruef(i == 0, "Equality can happen only on base level: %d", i)
@@ -374,7 +382,7 @@ func (s *Skiplist) findLast() *node {
 // Get gets the value associated with the key. It returns a valid value if it finds equal or earlier
 // version of the same key.
 func (s *Skiplist) Get(key []byte) y.ValueStruct {
-	n, _ := s.findNear(key, false, true) // findGreaterOrEqual.
+	n, _ := s.findNear(key, false, true) // findGreaterOrEqual(x>=key).
 	if n == nil {
 		return y.ValueStruct{}
 	}
