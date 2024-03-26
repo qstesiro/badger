@@ -565,7 +565,10 @@ func (txn *Txn) commitAndSend() (func() error, error) {
 	processEntry := func(e *Entry) {
 		// Suffix the keys with commit ts, so the key versions are sorted in
 		// descending order of commit timestamp.
-		e.Key = y.KeyWithTs(e.Key, e.version)
+		// +--------------+---------------------+
+		// |  len(e.Key)  |  math.MaxUint64-ts  |
+		// +--------------+---------------------+
+		e.Key = y.KeyWithTs(e.Key, e.version) // 越早写入版本越大
 		// Add bitTxn only if these entries are part of a transaction. We
 		// support SetEntryAt(..) in managed mode which means a single
 		// transaction can have entries with different timestamps. If entries

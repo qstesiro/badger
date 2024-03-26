@@ -360,6 +360,7 @@ func (s *Skiplist) Empty() bool {
 
 // findLast returns the last element. If head (empty list), we return nil. All the find functions
 // will NEVER return the head nodes.
+// 自愧不如,我就只想到从0层顺序遍历O(n) !!!
 func (s *Skiplist) findLast() *node {
 	n := s.head
 	level := int(s.getHeight()) - 1
@@ -443,7 +444,7 @@ func (s *Iterator) ValueUint64() uint64 {
 // Next advances to the next position.
 func (s *Iterator) Next() {
 	y.AssertTrue(s.Valid())
-	s.n = s.list.getNext(s.n, 0)
+	s.n = s.list.getNext(s.n, 0) // s.list.findNear(s.Key(), false, false)
 }
 
 // Prev advances to the previous position.
@@ -454,12 +455,12 @@ func (s *Iterator) Prev() {
 
 // Seek advances to the first entry with a key >= target.
 func (s *Iterator) Seek(target []byte) {
-	s.n, _ = s.list.findNear(target, false, true) // find >=.
+	s.n, _ = s.list.findNear(target, false, true) // find > or =.
 }
 
 // SeekForPrev finds an entry with key <= target.
 func (s *Iterator) SeekForPrev(target []byte) {
-	s.n, _ = s.list.findNear(target, true, true) // find <=.
+	s.n, _ = s.list.findNear(target, true, true) // find < or =.
 }
 
 // SeekToFirst seeks position at the first entry in list.
@@ -477,6 +478,7 @@ func (s *Iterator) SeekToLast() {
 // UniIterator is a unidirectional memtable iterator. It is a thin wrapper around
 // Iterator. We like to keep Iterator as before, because it is more powerful and
 // we might support bidirectional iterators in the future.
+// 包装类型,支持正向或反向遍历
 type UniIterator struct {
 	iter     *Iterator
 	reversed bool
