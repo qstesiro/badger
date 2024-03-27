@@ -1076,7 +1076,7 @@ func buildL0Table(iter y.Iterator, dropPrefixes [][]byte, bopts table.Options) *
 // handleMemTableFlush must be run serially.
 func (db *DB) handleMemTableFlush(mt *memTable, dropPrefixes [][]byte) error {
 	bopts := buildTableOptions(db)
-	itr := mt.sl.NewUniIterator(false)
+	itr := mt.sl.NewUniIterator(false) // 正向迭代器
 	builder := buildL0Table(itr, nil, bopts)
 	defer builder.Close()
 

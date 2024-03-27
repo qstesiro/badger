@@ -124,7 +124,7 @@ func (db *DB) openMemTable(fid, flags int) (*memTable, error) {
 		fid:      uint32(fid),
 		path:     filepath, // 名称(5位).mem
 		registry: db.registry,
-		writeAt:  vlogHeaderSize, // 20字节,赋值应该与实际写入代码在就近原则 ???
+		writeAt:  vlogHeaderSize, // 20Bytes
 		opt:      db.opt,
 	}
 	lerr := mt.wal.open(filepath, flags, 2*db.opt.MemTableSize) // 128M
@@ -205,7 +205,7 @@ func (mt *memTable) Put(key []byte, value y.ValueStruct) error {
 	// Write to skiplist and update maxVersion encountered.
 	mt.sl.Put(key, value)
 	if ts := y.ParseTs(entry.Key); ts > mt.maxVersion {
-		mt.maxVersion = ts
+		mt.maxVersion = ts // 更新版本
 	}
 	y.NumBytesWrittenToL0Add(mt.opt.MetricsEnabled, entry.estimateSizeAndSetThreshold(mt.opt.ValueThreshold))
 	return nil
