@@ -101,18 +101,18 @@ func (b *Builder) allocate(need int) []byte {
 	if len(bb.data[bb.end:]) < need {
 		// We need to reallocate. 1GB is the max size that the allocator can allocate.
 		// While reallocating, if doubling exceeds that limit, then put the upper bound on it.
-		sz := 2 * len(bb.data)
-		if sz > (1 << 30) {
+		sz := 2 * len(bb.data) // 翻倍增长
+		if sz > (1 << 30) {    // 最大1G
 			sz = 1 << 30
 		}
-		if bb.end+need > sz {
+		if bb.end+need > sz { // 如果超过最大1G也会收集
 			sz = bb.end + need
 		}
 		tmp := b.alloc.Allocate(sz)
 		copy(tmp, bb.data)
 		bb.data = tmp
 	}
-	bb.end += need
+	bb.end += need // 增加大小
 	return bb.data[bb.end-need : bb.end]
 }
 
@@ -122,7 +122,7 @@ func (b *Builder) append(data []byte) {
 	y.AssertTrue(len(data) == copy(dst, data))
 }
 
-const maxAllocatorInitialSz = 256 << 20
+const maxAllocatorInitialSz = 256 << 20 // 256M
 
 // NewTableBuilder makes a new TableBuilder.
 func NewTableBuilder(opts Options) *Builder {
@@ -218,9 +218,9 @@ func (b *Builder) keyDiff(newKey []byte) []byte {
 }
 
 func (b *Builder) addHelper(key []byte, v y.ValueStruct, vpLen uint32) {
-	b.keyHashes = append(b.keyHashes, y.Hash(y.ParseKey(key)))
+	b.keyHashes = append(b.keyHashes, y.Hash(y.ParseKey(key))) // key(不包含version)哈希
 
-	if version := y.ParseTs(key); version > b.maxVersion {
+	if version := y.ParseTs(key); version > b.maxVersion { // version记录
 		b.maxVersion = version
 	}
 
@@ -230,21 +230,21 @@ func (b *Builder) addHelper(key []byte, v y.ValueStruct, vpLen uint32) {
 		// Make a copy. Builder should not keep references. Otherwise, caller has to be very careful
 		// and will have to make copies of keys every time they add to builder, which is even worse.
 		b.curBlock.baseKey = append(b.curBlock.baseKey[:0], key...)
-		diffKey = key
+		diffKey = key // 块中第一个key整体不同
 	} else {
-		diffKey = b.keyDiff(key)
+		diffKey = b.keyDiff(key) // 不同部分数据
 	}
 
 	y.AssertTrue(len(key)-len(diffKey) <= math.MaxUint16)
 	y.AssertTrue(len(diffKey) <= math.MaxUint16)
 
 	h := header{
-		overlap: uint16(len(key) - len(diffKey)),
-		diff:    uint16(len(diffKey)),
+		overlap: uint16(len(key) - len(diffKey)), // 相同前缀长度
+		diff:    uint16(len(diffKey)),            // 不同部分长度
 	}
 
 	// store current entry's offset
-	b.curBlock.entryOffsets = append(b.curBlock.entryOffsets, uint32(b.curBlock.end))
+	b.curBlock.entryOffsets = append(b.curBlock.entryOffsets, uint32(b.curBlock.end)) // 每次allocate会增长end
 
 	// Layout: header, diffKey, value.
 	b.append(h.Encode())
@@ -311,12 +311,12 @@ func (b *Builder) shouldFinishBlock(key []byte, value y.ValueStruct) bool {
 	// Integer overflow check for statements below.
 	y.AssertTrue((uint32(len(b.curBlock.entryOffsets))+1)*4+4+8+4 < math.MaxUint32)
 	// We should include current entry also in size, that's why +1 to len(b.entryOffsets).
-	entriesOffsetsSize := uint32((len(b.curBlock.entryOffsets)+1)*4 +
+	entriesOffsetsSize := uint32((len(b.curBlock.entryOffsets)+1)*4 + // +1代表即将增加的entry
 		4 + // size of list
 		8 + // Sum64 in checksum proto
 		4) // checksum length
-	estimatedSize := uint32(b.curBlock.end) + uint32(6 /*header size for entry*/) +
-		uint32(len(key)) + value.EncodedSize() + entriesOffsetsSize
+	estimatedSize := uint32(b.curBlock.end) + uint32(6 /*header size for entry*/) + // 不应该使用headerSize ???
+		uint32(len(key)) + value.EncodedSize() + entriesOffsetsSize // 当前位置+新项+元数据+校验和
 
 	if b.shouldEncrypt() {
 		// IV is added at the end of the block, while encrypting.
@@ -426,7 +426,7 @@ func (bd *buildData) Copy(dst []byte) int {
 	return written
 }
 
-func (b *Builder) Done() buildData {
+func (b *Builder) Done() buildData { // 构建buildData
 	b.finishBlock() // This will never start a new block.
 	if b.blockChan != nil {
 		close(b.blockChan)
