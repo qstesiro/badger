@@ -1057,7 +1057,7 @@ func arenaSize(opt Options) int64 {
 func buildL0Table(iter y.Iterator, dropPrefixes [][]byte, bopts table.Options) *table.Builder {
 	defer iter.Close()
 
-	b := table.NewTableBuilder(bopts)
+	b := table.NewTableBuilder(bopts) // 外部关闭builder
 	for iter.Rewind(); iter.Valid(); iter.Next() {
 		if len(dropPrefixes) > 0 && hasAnyPrefixes(iter.Key(), dropPrefixes) {
 			continue
@@ -1067,7 +1067,7 @@ func buildL0Table(iter y.Iterator, dropPrefixes [][]byte, bopts table.Options) *
 		if vs.Meta&bitValuePointer > 0 {
 			vp.Decode(vs.Value)
 		}
-		b.Add(iter.Key(), iter.Value(), vp.Len)
+		b.Add(iter.Key(), iter.Value(), vp.Len) // 填充builder
 	}
 
 	return b
@@ -1076,8 +1076,8 @@ func buildL0Table(iter y.Iterator, dropPrefixes [][]byte, bopts table.Options) *
 // handleMemTableFlush must be run serially.
 func (db *DB) handleMemTableFlush(mt *memTable, dropPrefixes [][]byte) error {
 	bopts := buildTableOptions(db)
-	itr := mt.sl.NewUniIterator(false) // 正向迭代器
-	builder := buildL0Table(itr, nil, bopts)
+	itr := mt.sl.NewUniIterator(false)       // 正向迭代器
+	builder := buildL0Table(itr, nil, bopts) // 创建并填充builder后关闭迭代器
 	defer builder.Close()
 
 	// buildL0Table can return nil if the none of the items in the skiplist are

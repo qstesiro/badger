@@ -267,7 +267,7 @@ func CreateTable(fname string, builder *Builder) (*Table, error) {
 
 	written := bd.Copy(mf.Data)
 	y.AssertTrue(written == len(mf.Data))
-	if err := z.Msync(mf.Data); err != nil {
+	if err := z.Msync(mf.Data); err != nil { // 落盘
 		return nil, y.Wrapf(err, "while calling msync on %s", fname)
 	}
 	return OpenTable(mf, *builder.opts)

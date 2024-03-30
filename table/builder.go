@@ -458,7 +458,7 @@ func (b *Builder) Done() buildData { // 构建buildData
 
 	bd.index = index
 	bd.checksum = checksum
-	bd.Size = int(dataSize) + len(index) + len(checksum) + 4 + 4
+	bd.Size = int(dataSize) + len(index) + len(checksum) + 4 + 4 // 不明白4+4的含义 ???
 	return bd
 }
 
@@ -553,20 +553,20 @@ func (b *Builder) buildIndex(bloom []byte) ([]byte, uint32) {
 		bfoff = builder.CreateByteVector(bloom)
 	}
 	b.onDiskSize += dataSize
-	fb.TableIndexStart(builder)
+	fb.TableIndexStart(builder) // index开始
 	fb.TableIndexAddOffsets(builder, boEnd)
 	fb.TableIndexAddBloomFilter(builder, bfoff)
 	fb.TableIndexAddMaxVersion(builder, b.maxVersion)
 	fb.TableIndexAddUncompressedSize(builder, b.uncompressedSize.Load())
 	fb.TableIndexAddKeyCount(builder, uint32(len(b.keyHashes)))
-	fb.TableIndexAddOnDiskSize(builder, b.onDiskSize)
+	fb.TableIndexAddOnDiskSize(builder, b.onDiskSize) // vlog中value数据大小
 	fb.TableIndexAddStaleDataSize(builder, uint32(b.staleDataSize))
-	builder.Finish(fb.TableIndexEnd(builder))
+	builder.Finish(fb.TableIndexEnd(builder)) // index结束
 
 	buf := builder.FinishedBytes()
-	index := fb.GetRootAsTableIndex(buf, 0)
+	index := fb.GetRootAsTableIndex(buf, 0) // 二进制数据转对象
 	// Mutate the ondisk size to include the size of the index as well.
-	y.AssertTrue(index.MutateOnDiskSize(index.OnDiskSize() + uint32(len(buf))))
+	y.AssertTrue(index.MutateOnDiskSize(index.OnDiskSize() + uint32(len(buf)))) // vlog中value数据+index
 	return buf, dataSize
 }
 
