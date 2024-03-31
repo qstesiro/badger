@@ -801,11 +801,14 @@ func (db *DB) writeToLSM(b *request) error {
 
 	for i, entry := range b.Entries {
 		var err error
-		if entry.skipVlogAndSetThreshold(db.valueThreshold()) {
+		// 此处不会与参数阈值比较,而是与项中已经记录的旧阈值比较
+		// 这非常重要,因为db记录的阈值会动态更新,如果与参数阈值比较会产生错误
+		// 建议此处的判定直接用b.Prts[i] == valuePointer{}更合适
+		if entry.skipVlogAndSetThreshold(db.valueThreshold()) { // 判定阈值
 			// Will include deletion / tombstone case.
 			err = db.mt.Put(entry.Key,
 				y.ValueStruct{
-					Value: entry.Value,
+					Value: entry.Value, // 写原始值
 					// Ensure value pointer flag is removed. Otherwise, the value will fail
 					// to be retrieved during iterator prefetch. `bitValuePointer` is only
 					// known to be set in write to LSM when the entry is loaded from a backup
@@ -818,7 +821,7 @@ func (db *DB) writeToLSM(b *request) error {
 			// Write pointer to Memtable.
 			err = db.mt.Put(entry.Key,
 				y.ValueStruct{
-					Value:     b.Ptrs[i].Encode(),
+					Value:     b.Ptrs[i].Encode(), // 写值指针
 					Meta:      entry.meta | bitValuePointer,
 					UserMeta:  entry.UserMeta,
 					ExpiresAt: entry.ExpiresAt,

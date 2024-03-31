@@ -170,9 +170,9 @@ func (e *Entry) estimateSizeAndSetThreshold(threshold int64) int64 {
 
 func (e *Entry) skipVlogAndSetThreshold(threshold int64) bool {
 	if e.valThreshold == 0 {
-		e.valThreshold = threshold
+		e.valThreshold = threshold // 设置新阈值
 	}
-	return int64(len(e.Value)) < e.valThreshold
+	return int64(len(e.Value)) < e.valThreshold // 与已经记录的旧阈值比较不会与参数阈值比较
 }
 
 //nolint:unused

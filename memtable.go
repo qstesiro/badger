@@ -270,8 +270,8 @@ type logFile struct {
 	lock     sync.RWMutex
 	fid      uint32
 	size     atomic.Uint32 // 数据量的大小
-	dataKey  *pb.DataKey
-	baseIV   []byte
+	dataKey  *pb.DataKey   // 加密相关字段 ~~~
+	baseIV   []byte        // 加密相关字段 ~~~
 	registry *KeyRegistry
 	writeAt  uint32
 	opt      Options
@@ -314,7 +314,7 @@ func (lf *logFile) encodeEntry(buf *bytes.Buffer, e *Entry, offset uint32) (int,
 	sz := h.Encode(headerEnc[:])
 	y.Check2(writer.Write(headerEnc[:sz]))
 	// we'll encrypt only key and value.
-	if lf.encryptionEnabled() {
+	if lf.encryptionEnabled() { // 加密相关看这里 ~~~
 		// TODO: no need to allocate the bytes. we can calculate the encrypted buf one by one
 		// since we're using ctr mode of AES encryption. Ordering won't changed. Need some
 		// refactoring in XORBlock which will work like stream cipher.
@@ -424,7 +424,7 @@ func (lf *logFile) generateIV(offset uint32) []byte {
 
 func (lf *logFile) doneWriting(offset uint32) error {
 	if lf.opt.SyncWrites {
-		if err := lf.Sync(); err != nil {
+		if err := lf.Sync(); err != nil { // 落盘
 			return y.Wrapf(err, "Unable to sync value log: %q", lf.path)
 		}
 	}
@@ -560,7 +560,7 @@ func (lf *logFile) open(path string, flags int, fsize int64) error {
 			os.Remove(path)
 			return err
 		}
-		lf.size.Store(vlogHeaderSize) // 多余的赋值 ???
+		lf.size.Store(vlogHeaderSize) // 此处可以不用赋值,在bootstrap中已经将header数据写入data中
 
 	} else if ferr != nil {
 		return y.Wrapf(ferr, "while opening file: %s", path)
@@ -606,7 +606,7 @@ func (lf *logFile) bootstrap() error {
 	if dk, err = lf.registry.LatestDataKey(); err != nil {
 		return y.Wrapf(err, "Error while retrieving datakey in logFile.bootstarp")
 	}
-	lf.dataKey = dk
+	lf.dataKey = dk // 加密相关 ~~~
 
 	// We'll always preserve vlogHeaderSize for key id and baseIV.
 	buf := make([]byte, vlogHeaderSize)
@@ -615,13 +615,13 @@ func (lf *logFile) bootstrap() error {
 	// key id will be zero if the logfile is in plain text.
 	binary.BigEndian.PutUint64(buf[:8], lf.keyID())
 	// generate base IV. It'll be used with offset of the vptr to encrypt the entry.
-	if _, err := cryptorand.Read(buf[8:]); err != nil {
+	if _, err := cryptorand.Read(buf[8:]); err != nil { // 加密相关 ~~~
 		return y.Wrapf(err, "Error while creating base IV, while creating logfile")
 	}
 
 	// Initialize base IV.
 	lf.baseIV = buf[8:]
-	y.AssertTrue(len(lf.baseIV) == 12)
+	y.AssertTrue(len(lf.baseIV) == 12) // 应该定义常量 = 12 ???
 
 	// Copy over to the logFile.
 	y.AssertTrue(vlogHeaderSize == copy(lf.Data[0:], buf))

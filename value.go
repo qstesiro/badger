@@ -527,7 +527,7 @@ func (vlog *valueLog) createVlogFile() (*logFile, error) {
 	// writableLogOffset is only written by write func, by read by Read func.
 	// To avoid a race condition, all reads and updates to this variable must be
 	// done via atomics.
-	vlog.writableLogOffset.Store(vlogHeaderSize)
+	vlog.writableLogOffset.Store(vlogHeaderSize) // header数据在lf.open函数中已填充
 	vlog.numEntriesWritten = 0
 	vlog.filesLock.Unlock()
 
@@ -838,7 +838,7 @@ func (vlog *valueLog) write(reqs []*request) error {
 
 	toDisk := func() error {
 		if vlog.woffset() > uint32(vlog.opt.ValueLogFileSize) ||
-			vlog.numEntriesWritten > vlog.opt.ValueLogMaxEntries {
+			vlog.numEntriesWritten > vlog.opt.ValueLogMaxEntries { // 判定文件大小或项个数
 			if err := curlf.doneWriting(vlog.woffset()); err != nil { // 数据同步磁盘
 				return err
 			}
@@ -888,12 +888,13 @@ func (vlog *valueLog) write(reqs []*request) error {
 
 			p.Len = uint32(plen)
 			b.Ptrs = append(b.Ptrs, p)
-			if err := write(buf); err != nil { // 写入数据
+			if err := write(buf); err != nil { // 写入数据同时更新offset
 				return err
 			}
 			written++
 			bytesWritten += buf.Len()
-			// No need to flush anything, we write to file directly via mmap. 不需要同步吗 ???
+			// No need to flush anything, we write to file directly via mmap.
+			// 此处不需要同步磁盘,在整个reqs完成后才同步磁盘
 		}
 		y.NumWritesVlogAdd(vlog.opt.MetricsEnabled, int64(written))
 		y.NumBytesWrittenVlogAdd(vlog.opt.MetricsEnabled, int64(bytesWritten))
