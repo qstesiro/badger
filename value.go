@@ -900,7 +900,7 @@ func (vlog *valueLog) write(reqs []*request) error {
 		y.NumBytesWrittenVlogAdd(vlog.opt.MetricsEnabled, int64(bytesWritten))
 
 		vlog.numEntriesWritten += uint32(written) // 更新已写项
-		vlog.db.threshold.update(valueSizes)      // 更新阈值
+		vlog.db.threshold.update(valueSizes)      // 更新阈值,用于动态计算vlog阈值
 		// We write to disk here so that all entries that are part of the same transaction are
 		// written to the same vlog file.
 		if err := toDisk(); err != nil { // 落地磁盘
