@@ -545,7 +545,7 @@ func (txn *Txn) commitAndSend() (func() error, error) {
 
 	keepTogether := true
 	setVersion := func(e *Entry) {
-		if e.version == 0 {
+		if e.version == 0 { // 版本为0设置为commitTs
 			e.version = commitTs
 		} else {
 			keepTogether = false

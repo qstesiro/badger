@@ -404,7 +404,7 @@ func (t *Table) initBiggestAndSmallest() error {
 		return y.Wrapf(err, "failed to read index.")
 	}
 
-	t.smallest = y.Copy(ko.KeyBytes())
+	t.smallest = y.Copy(ko.KeyBytes()) // 查询sstable中最小key
 
 	it2 := t.NewIterator(REVERSED | NOCACHE)
 	defer it2.Close()
@@ -412,7 +412,7 @@ func (t *Table) initBiggestAndSmallest() error {
 	if !it2.Valid() {
 		return y.Wrapf(it2.err, "failed to initialize biggest for table %s", t.Filename())
 	}
-	t.biggest = y.Copy(it2.Key())
+	t.biggest = y.Copy(it2.Key()) // 查询sstable中最大key
 	return nil
 }
 
@@ -461,7 +461,7 @@ func (t *Table) initIndex() (*fb.BlockOffset, error) {
 		return nil, y.Wrapf(err, "failed to verify checksum for table: %s", t.Filename())
 	}
 
-	index, err := t.readTableIndex()
+	index, err := t.readTableIndex() // 其内部又读一次index数据,可以将data传入优化 ???
 	if err != nil {
 		return nil, err
 	}
