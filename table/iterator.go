@@ -36,8 +36,8 @@ type blockIterator struct {
 	entryOffsets []uint32
 	block        *block
 
-	tableID uint64
-	blockID int
+	tableID uint64 // 文件id
+	blockID int    // 块idx
 	// prevOverlap stores the overlap of the previous key with the base key.
 	// This avoids unnecessary copy of base key when the overlap is same for multiple keys.
 	prevOverlap uint16
@@ -345,7 +345,7 @@ func (itr *Iterator) next() {
 	if !itr.bi.Valid() {
 		itr.bpos++
 		itr.bi.data = nil
-		itr.next()
+		itr.next() // 递归
 		return
 	}
 }
@@ -375,7 +375,7 @@ func (itr *Iterator) prev() {
 	if !itr.bi.Valid() {
 		itr.bpos--
 		itr.bi.data = nil
-		itr.prev()
+		itr.prev() // 递归
 		return
 	}
 }
