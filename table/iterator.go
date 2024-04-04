@@ -62,13 +62,13 @@ func (itr *blockIterator) setBlock(b *block) {
 
 // setIdx sets the iterator to the entry at index i and set it's key and value.
 func (itr *blockIterator) setIdx(i int) {
-	itr.idx = i
+	itr.idx = i // 可以加判定idx!=i才执行后续,避免重复执行
 	if i >= len(itr.entryOffsets) || i < 0 {
-		itr.err = io.EOF
+		itr.err = io.EOF // 结束
 		return
 	}
 	itr.err = nil
-	startOffset := int(itr.entryOffsets[i])
+	startOffset := int(itr.entryOffsets[i]) // 启始偏移
 
 	// Set base key.
 	if len(itr.baseKey) == 0 {
@@ -77,7 +77,7 @@ func (itr *blockIterator) setIdx(i int) {
 		itr.baseKey = itr.data[headerSize : headerSize+baseHeader.diff]
 	}
 
-	var endOffset int
+	var endOffset int // 结束偏移
 	// idx points to the last entry in the block.
 	if itr.idx+1 == len(itr.entryOffsets) {
 		endOffset = len(itr.data)
@@ -98,20 +98,20 @@ func (itr *blockIterator) setIdx(i int) {
 		}
 	}()
 
-	entryData := itr.data[startOffset:endOffset]
+	entryData := itr.data[startOffset:endOffset] // 截取项数据
 	var h header
 	h.Decode(entryData)
 	// Header contains the length of key overlap and difference compared to the base key. If the key
 	// before this one had the same or better key overlap, we can avoid copying that part into
 	// itr.key. But, if the overlap was lesser, we could copy over just that portion.
-	if h.overlap > itr.prevOverlap {
+	if h.overlap > itr.prevOverlap { // 补齐公共前缀
 		itr.key = append(itr.key[:itr.prevOverlap], itr.baseKey[itr.prevOverlap:h.overlap]...)
 	}
 	itr.prevOverlap = h.overlap
 	valueOff := headerSize + h.diff
 	diffKey := entryData[headerSize:valueOff]
 	itr.key = append(itr.key[:h.overlap], diffKey...)
-	itr.val = entryData[valueOff:]
+	itr.val = entryData[valueOff:] // 最终要解码为y.ValueStruct
 }
 
 func (itr *blockIterator) Valid() bool {
@@ -151,7 +151,7 @@ func (itr *blockIterator) seek(key []byte, whence int) {
 		itr.setIdx(idx)
 		return y.CompareKeys(itr.key, key) >= 0
 	})
-	itr.setIdx(foundEntryIdx)
+	itr.setIdx(foundEntryIdx) // 如果没有找到foundEntryIdx=len(entryOffsets)
 }
 
 // seekToFirst brings us to the first element.
@@ -289,10 +289,10 @@ func (itr *Iterator) seekFrom(key []byte, whence int) {
 	// Since idx>0, we know block[idx-1].smallest is <= key.
 	// There are two cases.
 	// 1) Everything in block[idx-1] is strictly < key. In this case, we should go to the first
-	//    element of block[idx].
-	// 2) Some element in block[idx-1] is >= key. We should go to that element.
+	//    element of block[idx]. 前一个块所有数据都小key,直接使用当前块的最小值
+	// 2) Some element in block[idx-1] is >= key. We should go to that element. 查找前一个块
 	itr.seekHelper(idx-1, key)
-	if itr.err == io.EOF {
+	if itr.err == io.EOF { // 前一个块没有找到>=key的数据,在当前块中查找
 		// Case 1. Need to visit block[idx].
 		if idx == itr.t.offsetsLength() {
 			// If idx == len(itr.t.blockIndex), then input key is greater than ANY element of table.
@@ -302,11 +302,11 @@ func (itr *Iterator) seekFrom(key []byte, whence int) {
 		// Since block[idx].smallest is > key. This is essentially a block[idx].SeekToFirst.
 		itr.seekHelper(idx, key)
 	}
-	// Case 2: No need to do anything. We already did the seek in block[idx-1].
+	// Case 2: No need to do anything. We already did the seek in block[idx-1]. 已经在前一个块中查找到了
 }
 
 // seek will reset iterator and seek to >= key.
-func (itr *Iterator) seek(key []byte) {
+func (itr *Iterator) seek(key []byte) { // seekForNext
 	itr.seekFrom(key, origin)
 }
 
@@ -345,7 +345,7 @@ func (itr *Iterator) next() {
 	if !itr.bi.Valid() {
 		itr.bpos++
 		itr.bi.data = nil
-		itr.next() // 递归
+		itr.next() // 递归进入下一个块(递归次数与块个数一致,需要注意栈空间大小) ???
 		return
 	}
 }
@@ -375,7 +375,7 @@ func (itr *Iterator) prev() {
 	if !itr.bi.Valid() {
 		itr.bpos--
 		itr.bi.data = nil
-		itr.prev() // 递归
+		itr.prev() // 递归回到上一个块(递归次数与块个数一致,需要注意栈空间大小) ???
 		return
 	}
 }
