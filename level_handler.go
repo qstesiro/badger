@@ -202,7 +202,7 @@ func (s *levelHandler) tryAddLevel0Table(t *table.Table) bool {
 	}
 
 	s.tables = append(s.tables, t)
-	t.IncrRef()
+	t.IncrRef() // +1
 	s.addSize(t)
 
 	return true

@@ -46,7 +46,7 @@ type blockIterator struct {
 func (itr *blockIterator) setBlock(b *block) {
 	// Decrement the ref for the old block. If the old block was compressed, we
 	// might be able to reuse it.
-	itr.block.decrRef()
+	itr.block.decrRef() // 释放旧块 -1
 
 	itr.block = b
 	itr.err = nil
@@ -123,7 +123,7 @@ func (itr *blockIterator) Error() error {
 }
 
 func (itr *blockIterator) Close() {
-	itr.block.decrRef()
+	itr.block.decrRef() // -1
 }
 
 var (
@@ -186,7 +186,7 @@ type Iterator struct {
 
 // NewIterator returns a new iterator of the Table
 func (t *Table) NewIterator(opt int) *Iterator {
-	t.IncrRef() // Important.
+	t.IncrRef() // Important. +1
 	ti := &Iterator{t: t, opt: opt}
 	return ti
 }
@@ -194,7 +194,7 @@ func (t *Table) NewIterator(opt int) *Iterator {
 // Close closes the iterator (and it must be called).
 func (itr *Iterator) Close() error {
 	itr.bi.Close()
-	return itr.t.DecrRef()
+	return itr.t.DecrRef() // -1
 }
 
 func (itr *Iterator) reset() {

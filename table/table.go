@@ -304,7 +304,7 @@ func OpenTable(mf *z.MmapFile, opts Options) (*Table, error) {
 		CreatedAt:  fileInfo.ModTime(),
 	}
 	// Caller is given one reference.
-	t.ref.Store(1)
+	t.ref.Store(1) // +1
 
 	if err := t.initBiggestAndSmallest(); err != nil {
 		return nil, y.Wrapf(err, "failed to initialize table")
@@ -557,18 +557,18 @@ func (t *Table) block(idx int, useCache bool) (*block, error) {
 	var ko fb.BlockOffset
 	y.AssertTrue(t.offsets(&ko, idx))
 	blk := &block{offset: int(ko.Offset())}
-	blk.ref.Store(1)
-	defer blk.decrRef() // Deal with any errors, where blk would not be returned.
+	blk.ref.Store(1)    // incrRef函数中判定是否ref为0所以不能直接使用 +1
+	defer blk.decrRef() // Deal with any errors, where blk would not be returned. -1
 	NumBlocks.Add(1)
 
 	var err error
-	if blk.data, err = t.read(blk.offset, int(ko.Len())); err != nil {
+	if blk.data, err = t.read(blk.offset, int(ko.Len())); err != nil { // 读取块数据
 		return nil, y.Wrapf(err,
 			"failed to read from file: %s at offset: %d, len: %d",
 			t.Fd.Name(), blk.offset, ko.Len())
 	}
 
-	if t.shouldDecrypt() {
+	if t.shouldDecrypt() { // 解密
 		// Decrypt the block if it is encrypted.
 		if blk.data, err = t.decrypt(blk.data, true); err != nil {
 			return nil, err
@@ -577,7 +577,7 @@ func (t *Table) block(idx int, useCache bool) (*block, error) {
 		blk.freeMe = true
 	}
 
-	if err = t.decompress(blk); err != nil {
+	if err = t.decompress(blk); err != nil { // 解压
 		return nil, y.Wrapf(err,
 			"failed to decode compressed data in file: %s at offset: %d, len: %d",
 			t.Fd.Name(), blk.offset, ko.Len())
@@ -600,15 +600,18 @@ func (t *Table) block(idx int, useCache bool) (*block, error) {
 	// Move back and read numEntries in the block.
 	readPos -= 4
 	numEntries := int(y.BytesToU32(blk.data[readPos : readPos+4]))
-	entriesIndexStart := readPos - (numEntries * 4)
-	entriesIndexEnd := entriesIndexStart + numEntries*4
+	entriesIndexStart := readPos - (numEntries * 4)     // 项偏移启始
+	entriesIndexEnd := entriesIndexStart + numEntries*4 // 项偏移结束
 
-	blk.entryOffsets = y.BytesToU32Slice(blk.data[entriesIndexStart:entriesIndexEnd])
+	blk.entryOffsets = y.BytesToU32Slice(blk.data[entriesIndexStart:entriesIndexEnd]) // 项偏移列表
 
 	blk.entriesIndexStart = entriesIndexStart
 
 	// Drop checksum and checksum length.
 	// The checksum is calculated for actual data + entry index + index length
+	// +----------+-----------+-----------+---------------------+----------------------+
+	// |   entry  |    ...    |   entry   |    entry-offsets    |   entry-offset-len   |
+	// +----------+-----------+-----------+---------------------+----------------------+
 	blk.data = blk.data[:readPos+4]
 
 	// Verify checksum on if checksum verification mode is OnRead on OnStartAndRead.
@@ -618,16 +621,16 @@ func (t *Table) block(idx int, useCache bool) (*block, error) {
 		}
 	}
 
-	blk.incrRef()
+	blk.incrRef() // +1
 	if useCache && t.opt.BlockCache != nil {
 		key := t.blockCacheKey(idx)
 		// incrRef should never return false here because we're calling it on a
 		// new block with ref=1.
-		y.AssertTrue(blk.incrRef())
+		y.AssertTrue(blk.incrRef()) // +1
 
 		// Decrement the block ref if we could not insert it in the cache.
 		if !t.opt.BlockCache.Set(key, blk, blk.size()) {
-			blk.decrRef()
+			blk.decrRef() // -1
 		}
 		// We have added an OnReject func in our cache, which gets called in case the block is not
 		// admitted to the cache. So, every block would be accounted for.
@@ -644,7 +647,7 @@ func (t *Table) blockCacheKey(idx int) []byte {
 	// Assume t.ID does not overflow uint32.
 	binary.BigEndian.PutUint32(buf[:4], uint32(t.ID()))
 	binary.BigEndian.PutUint32(buf[4:], uint32(idx))
-	return buf
+	return buf // (tid,idx)
 }
 
 // indexKey returns the cache key for block offsets. blockOffsets

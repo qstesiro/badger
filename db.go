@@ -1104,8 +1104,8 @@ func (db *DB) handleMemTableFlush(mt *memTable, dropPrefixes [][]byte) error {
 		return y.Wrap(err, "error while creating table")
 	}
 	// We own a ref on tbl.
-	err = db.lc.addLevel0Table(tbl) // This will incrRef
-	_ = tbl.DecrRef()               // Releases our ref.
+	err = db.lc.addLevel0Table(tbl) // This will incrRef. +1
+	_ = tbl.DecrRef()               // Releases our ref. -1
 	return err
 }
 
