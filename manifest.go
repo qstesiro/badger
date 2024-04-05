@@ -143,7 +143,7 @@ func helpOpenOrCreateManifestFile(dir string, readOnly bool, extMagic uint16,
 		flags |= y.ReadOnly
 	}
 	fp, err := y.OpenExistingFile(path, flags) // We explicitly sync in addChanges, outside the lock.
-	if err != nil {
+	if err != nil {                            // 文件不存在
 		if !os.IsNotExist(err) {
 			return nil, Manifest{}, err
 		}
@@ -160,12 +160,12 @@ func helpOpenOrCreateManifestFile(dir string, readOnly bool, extMagic uint16,
 			fp:                        fp,
 			directory:                 dir,
 			externalMagic:             extMagic,
-			manifest:                  m.clone(),
+			manifest:                  m.clone(), // 克隆
 			deletionsRewriteThreshold: deletionsThreshold,
 		}
 		return mf, m, nil
 	}
-
+	// 文件已存在
 	manifest, truncOffset, err := ReplayManifestFile(fp, extMagic)
 	if err != nil {
 		_ = fp.Close()
@@ -188,7 +188,7 @@ func helpOpenOrCreateManifestFile(dir string, readOnly bool, extMagic uint16,
 		fp:                        fp,
 		directory:                 dir,
 		externalMagic:             extMagic,
-		manifest:                  manifest.clone(),
+		manifest:                  manifest.clone(), // 克隆
 		deletionsRewriteThreshold: deletionsThreshold,
 	}
 	return mf, manifest, nil
@@ -272,11 +272,19 @@ func helpRewrite(dir string, m *Manifest, extMagic uint16) (*os.File, int, error
 	changes := m.asChanges()
 	set := pb.ManifestChangeSet{Changes: changes}
 
+	// change bytes are structured as (protobuf编码格式)
+	// +-----+----+-------+-------+-----------------+-------------+
+	// | tid | op | level | keyId | encryption(aes) | compression |
+	// +-----+----+-------+-------+-----------------+-------------+
 	changeBuf, err := proto.Marshal(&set)
 	if err != nil {
 		fp.Close()
 		return nil, 0, err
 	}
+	// changes buf bytes are structured as
+	// +-------------------------+--------------------+-------------------------------+
+	// | changeBuf len (4 bytes) | checksum (4 bytes) |  changeBuf (protobuf编码格式) |
+	// +-------------------------+--------------------+-------------------------------+
 	var lenCrcBuf [8]byte
 	binary.BigEndian.PutUint32(lenCrcBuf[0:4], uint32(len(changeBuf)))
 	binary.BigEndian.PutUint32(lenCrcBuf[4:8], crc32.Checksum(changeBuf, y.CastagnoliCrcTable))
@@ -286,28 +294,28 @@ func helpRewrite(dir string, m *Manifest, extMagic uint16) (*os.File, int, error
 		fp.Close()
 		return nil, 0, err
 	}
-	if err := fp.Sync(); err != nil {
+	if err := fp.Sync(); err != nil { // 落盘MANIFEST-REWRITE
 		fp.Close()
 		return nil, 0, err
 	}
 
 	// In Windows the files should be closed before doing a Rename.
-	if err = fp.Close(); err != nil {
+	if err = fp.Close(); err != nil { // 关闭MANIFEST-REWRITE
 		return nil, 0, err
 	}
 	manifestPath := filepath.Join(dir, ManifestFilename)
-	if err := os.Rename(rewritePath, manifestPath); err != nil {
+	if err := os.Rename(rewritePath, manifestPath); err != nil { // 重命名为MANIFEST
 		return nil, 0, err
 	}
-	fp, err = y.OpenExistingFile(manifestPath, 0)
+	fp, err = y.OpenExistingFile(manifestPath, 0) // 打开MANIFEST
 	if err != nil {
 		return nil, 0, err
 	}
-	if _, err := fp.Seek(0, io.SeekEnd); err != nil {
+	if _, err := fp.Seek(0, io.SeekEnd); err != nil { // 位置文件位置到0
 		fp.Close()
 		return nil, 0, err
 	}
-	if err := syncDir(dir); err != nil {
+	if err := syncDir(dir); err != nil { // 目录同步落盘
 		fp.Close()
 		return nil, 0, err
 	}
@@ -399,14 +407,14 @@ func ReplayManifestFile(fp *os.File, extMagic uint16) (Manifest, int64, error) {
 	for {
 		offset = r.count
 		var lenCrcBuf [8]byte
-		_, err := io.ReadFull(&r, lenCrcBuf[:])
+		_, err := io.ReadFull(&r, lenCrcBuf[:]) // len(changeBuf)与checksum
 		if err != nil {
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				break
 			}
 			return Manifest{}, 0, err
 		}
-		length := y.BytesToU32(lenCrcBuf[0:4])
+		length := y.BytesToU32(lenCrcBuf[0:4]) // len(changeBuf)
 		// Sanity check to ensure we don't over-allocate memory.
 		if length > uint32(stat.Size()) {
 			return Manifest{}, 0, errors.Errorf(
@@ -414,18 +422,18 @@ func ReplayManifestFile(fp *os.File, extMagic uint16) (Manifest, int64, error) {
 				length, stat.Size())
 		}
 		var buf = make([]byte, length)
-		if _, err := io.ReadFull(&r, buf); err != nil {
+		if _, err := io.ReadFull(&r, buf); err != nil { // changeBuf
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				break
 			}
 			return Manifest{}, 0, err
 		}
-		if crc32.Checksum(buf, y.CastagnoliCrcTable) != y.BytesToU32(lenCrcBuf[4:8]) {
+		if crc32.Checksum(buf, y.CastagnoliCrcTable) != y.BytesToU32(lenCrcBuf[4:8]) { // 验证checksum
 			return Manifest{}, 0, errBadChecksum
 		}
 
 		var changeSet pb.ManifestChangeSet
-		if err := proto.Unmarshal(buf, &changeSet); err != nil {
+		if err := proto.Unmarshal(buf, &changeSet); err != nil { // 解码
 			return Manifest{}, 0, err
 		}
 
