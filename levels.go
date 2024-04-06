@@ -349,8 +349,8 @@ func (s *levelsController) dropPrefixes(prefixes [][]byte) error {
 
 func (s *levelsController) startCompact(lc *z.Closer) {
 	n := s.kv.opt.NumCompactors
-	lc.AddRunning(n - 1)
-	for i := 0; i < n; i++ {
+	lc.AddRunning(n - 1)     // 在NewCloser(1)的基础上增加n-1
+	for i := 0; i < n; i++ { // 启动n个协程
 		go s.runCompactor(i, lc)
 	}
 }
@@ -434,7 +434,7 @@ func (s *levelsController) levelTargets() targets {
 func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 	defer lc.Done()
 
-	randomDelay := time.NewTimer(time.Duration(rand.Int31n(1000)) * time.Millisecond)
+	randomDelay := time.NewTimer(time.Duration(rand.Int31n(1000)) * time.Millisecond) // [0,999]
 	select {
 	case <-randomDelay.C:
 	case <-lc.HasBeenClosed():
@@ -442,7 +442,7 @@ func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 		return
 	}
 
-	moveL0toFront := func(prios []compactionPriority) []compactionPriority {
+	moveL0toFront := func(prios []compactionPriority) []compactionPriority { // 移动level0的sst到列表启始
 		idx := -1
 		for i, p := range prios {
 			if p.level == 0 {
@@ -473,6 +473,7 @@ func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 		}
 		return false
 	}
+
 	runOnce := func() bool {
 		prios := s.pickCompactLevels()
 		if id == 0 {
@@ -489,7 +490,6 @@ func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 				return true
 			}
 		}
-
 		return false
 	}
 
@@ -499,8 +499,8 @@ func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 			t:     s.levelTargets(),
 		}
 		run(p)
-
 	}
+
 	count := 0
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
