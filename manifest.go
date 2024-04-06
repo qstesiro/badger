@@ -273,9 +273,9 @@ func helpRewrite(dir string, m *Manifest, extMagic uint16) (*os.File, int, error
 	set := pb.ManifestChangeSet{Changes: changes}
 
 	// change bytes are structured as (protobuf编码格式)
-	// +-----+----+-------+-------+-----------------+-------------+
-	// | tid | op | level | keyId | encryption(aes) | compression |
-	// +-----+----+-------+-------+-----------------+-------------+
+	// +-----+----+-------+----------------+-----------------+-------------+
+	// | tid | op | level | keyId(DataKey) | encryption(aes) | compression |
+	// +-----+----+-------+----------------+-----------------+-------------+
 	changeBuf, err := proto.Marshal(&set)
 	if err != nil {
 		fp.Close()

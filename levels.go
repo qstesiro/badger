@@ -55,14 +55,14 @@ type levelsController struct {
 // listing.
 func revertToManifest(kv *DB, mf *Manifest, idMap map[uint64]struct{}) error {
 	// 1. Check all files in manifest exist.
-	for id := range mf.Tables {
+	for id := range mf.Tables { // manifest中的表必须存在
 		if _, ok := idMap[id]; !ok {
 			return fmt.Errorf("file does not exist for table %d", id)
 		}
 	}
 
 	// 2. Delete files that shouldn't exist.
-	for id := range idMap {
+	for id := range idMap { // 目录中存在但manifest中不存在的表删除
 		if _, ok := mf.Tables[id]; !ok {
 			kv.opt.Debugf("Table file %d not referenced in MANIFEST\n", id)
 			filename := table.NewFilename(id, kv.opt.Dir)
@@ -93,7 +93,7 @@ func newLevelsController(db *DB, mf *Manifest) (*levelsController, error) {
 		return s, nil
 	}
 	// Compare manifest against directory, check for existent/non-existent files, and remove.
-	if err := revertToManifest(db, mf, getIDMap(db.opt.Dir)); err != nil {
+	if err := revertToManifest(db, mf, getIDMap(db.opt.Dir)); err != nil { // 删除不在manifest中的sst
 		return nil, err
 	}
 
@@ -132,7 +132,7 @@ func newLevelsController(db *DB, mf *Manifest) (*levelsController, error) {
 				throttle.Done(rerr)
 				numOpened.Add(1)
 			}()
-			dk, err := db.registry.DataKey(tf.KeyID)
+			dk, err := db.registry.DataKey(tf.KeyID) // ~~~
 			if err != nil {
 				rerr = y.Wrapf(err, "Error while reading datakey")
 				return
@@ -142,12 +142,12 @@ func newLevelsController(db *DB, mf *Manifest) (*levelsController, error) {
 			topt.Compression = tf.Compression
 			topt.DataKey = dk
 
-			mf, err := z.OpenMmapFile(fname, db.opt.getFileFlags(), 0)
+			mf, err := z.OpenMmapFile(fname, db.opt.getFileFlags(), 0) // 打开sst文件
 			if err != nil {
 				rerr = y.Wrapf(err, "Opening file: %q", fname)
 				return
 			}
-			t, err := table.OpenTable(mf, topt)
+			t, err := table.OpenTable(mf, topt) // 创建
 			if err != nil {
 				if strings.HasPrefix(err.Error(), "CHECKSUM_MISMATCH:") {
 					db.opt.Errorf(err.Error())
@@ -176,7 +176,7 @@ func newLevelsController(db *DB, mf *Manifest) (*levelsController, error) {
 	}
 
 	// Make sure key ranges do not overlap etc.
-	if err := s.validate(); err != nil {
+	if err := s.validate(); err != nil { // 只验证level>0的层
 		_ = s.cleanupLevels()
 		return nil, y.Wrap(err, "Level validation")
 	}

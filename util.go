@@ -39,7 +39,7 @@ func (s *levelsController) validate() error {
 
 // Check does some sanity check on one level of data or in-memory index.
 func (s *levelHandler) validate() error {
-	if s.level == 0 {
+	if s.level == 0 { // 不判定level0
 		return nil
 	}
 
@@ -59,7 +59,7 @@ func (s *levelHandler) validate() error {
 				hex.Dump(s.tables[j].Smallest()), s.level, j, numTables)
 		}
 
-		if y.CompareKeys(s.tables[j].Smallest(), s.tables[j].Biggest()) > 0 {
+		if y.CompareKeys(s.tables[j].Smallest(), s.tables[j].Biggest()) > 0 { // 没有比较tablws[0]的内部 ???
 			return errors.Errorf(
 				"Intra: \n%s\n vs \n%s\n: level=%d j=%d numTables=%d",
 				hex.Dump(s.tables[j].Smallest()), hex.Dump(s.tables[j].Biggest()), s.level, j, numTables)
