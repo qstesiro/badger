@@ -552,7 +552,7 @@ func (s *levelsController) pickCompactLevels() (prios []compactionPriority) {
 	addPriority(0, float64(s.levels[0].numTables())/float64(s.kv.opt.NumLevelZeroTables))
 
 	// All other levels use size to calculate priority.
-	for i := 1; i < len(s.levels); i++ {
+	for i := 1; i < len(s.levels); i++ { // 排除L0
 		// Don't consider those tables that are already being compacted right now.
 		delSize := s.cstatus.delSize(i)
 
@@ -571,7 +571,7 @@ func (s *levelsController) pickCompactLevels() (prios []compactionPriority) {
 	// compaction of the above level. If the bottom level is not full, then increase the priority of
 	// above level.
 	var prevLevel int
-	for level := t.baseLevel; level < len(s.levels); level++ {
+	for level := t.baseLevel; level < len(s.levels); level++ { // prevLevel=i-1, level=i
 		if prios[prevLevel].adjusted >= 1 {
 			// Avoid absurdly large scores by placing a floor on the score that we'll
 			// adjust a level by. The value of 0.01 was chosen somewhat arbitrarily
@@ -579,7 +579,7 @@ func (s *levelsController) pickCompactLevels() (prios []compactionPriority) {
 			if prios[level].score >= minScore {
 				prios[prevLevel].adjusted /= prios[level].adjusted
 			} else {
-				prios[prevLevel].adjusted /= minScore
+				prios[prevLevel].adjusted /= minScore // 相当于*100倍
 			}
 		}
 		prevLevel = level
@@ -590,7 +590,7 @@ func (s *levelsController) pickCompactLevels() (prios []compactionPriority) {
 	// make better decisions about compacting L0. If we see a score >= 1.0, we can do L0->L0
 	// compactions. If the adjusted score >= 1.0, then we can do L0->Lbase compactions.
 	out := prios[:0]
-	for _, p := range prios[:len(prios)-1] {
+	for _, p := range prios[:len(prios)-1] { // 排除Lmax
 		if p.score >= 1.0 {
 			out = append(out, p)
 		}
