@@ -377,7 +377,7 @@ type targets struct {
 func (s *levelsController) levelTargets() targets {
 	adjust := func(sz int64) int64 {
 		if sz < s.kv.opt.BaseLevelSize {
-			return s.kv.opt.BaseLevelSize
+			return s.kv.opt.BaseLevelSize // 10M
 		}
 		return sz
 	}
@@ -388,17 +388,17 @@ func (s *levelsController) levelTargets() targets {
 	}
 	// DB size is the size of the last level.
 	dbSize := s.lastLevel().getTotalSize()
-	for i := len(s.levels) - 1; i > 0; i-- {
+	for i := len(s.levels) - 1; i > 0; i-- { // 初始化targetSz,不包含L0
 		ltarget := adjust(dbSize)
 		t.targetSz[i] = ltarget
-		if t.baseLevel == 0 && ltarget <= s.kv.opt.BaseLevelSize {
+		if t.baseLevel == 0 && ltarget <= s.kv.opt.BaseLevelSize { // ltarget >= BaseLevelSize
 			t.baseLevel = i
 		}
 		dbSize /= int64(s.kv.opt.LevelSizeMultiplier)
 	}
 
-	tsz := s.kv.opt.BaseTableSize
-	for i := 0; i < len(s.levels); i++ {
+	tsz := s.kv.opt.BaseTableSize        // 2M
+	for i := 0; i < len(s.levels); i++ { // 初始化fileSz
 		if i == 0 {
 			// Use MemTableSize for Level 0. Because at Level 0, we stop compactions based on the
 			// number of tables, not the size of the level. So, having a 1:1 size ratio between
