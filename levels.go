@@ -348,7 +348,8 @@ func (s *levelsController) dropPrefixes(prefixes [][]byte) error {
 }
 
 func (s *levelsController) startCompact(lc *z.Closer) {
-	n := s.kv.opt.NumCompactors
+	// n := s.kv.opt.NumCompactors // for debug ???
+	n := 1                   // for debug ???
 	lc.AddRunning(n - 1)     // 在NewCloser(1)的基础上增加n-1
 	for i := 0; i < n; i++ { // 启动n个协程
 		go s.runCompactor(i, lc)
@@ -377,24 +378,25 @@ type targets struct {
 func (s *levelsController) levelTargets() targets {
 	adjust := func(sz int64) int64 {
 		if sz < s.kv.opt.BaseLevelSize {
-			return s.kv.opt.BaseLevelSize // 10M
+			return s.kv.opt.BaseLevelSize // 最小层级目标阈值 10M
 		}
 		return sz
 	}
 
 	t := targets{
-		targetSz: make([]int64, len(s.levels)),
-		fileSz:   make([]int64, len(s.levels)),
+		targetSz: make([]int64, len(s.levels)), // 层级目标阈值
+		fileSz:   make([]int64, len(s.levels)), // 层级文件目标阈值
 	}
+
 	// DB size is the size of the last level.
 	dbSize := s.lastLevel().getTotalSize()
 	for i := len(s.levels) - 1; i > 0; i-- { // 初始化targetSz,不包含L0
 		ltarget := adjust(dbSize)
 		t.targetSz[i] = ltarget
 		if t.baseLevel == 0 && ltarget <= s.kv.opt.BaseLevelSize { // ltarget >= BaseLevelSize
-			t.baseLevel = i
+			t.baseLevel = i // 倒数第一个小于最小层级目标阈值的层,如果条件一直未成立则baseLevel=0
 		}
-		dbSize /= int64(s.kv.opt.LevelSizeMultiplier)
+		dbSize /= int64(s.kv.opt.LevelSizeMultiplier) // 上一层目标大小缩小10倍
 	}
 
 	tsz := s.kv.opt.BaseTableSize        // 2M
@@ -404,17 +406,27 @@ func (s *levelsController) levelTargets() targets {
 			// number of tables, not the size of the level. So, having a 1:1 size ratio between
 			// memtable size and the size of L0 files is better than churning out 32 files per
 			// memtable (assuming 64MB MemTableSize and 2MB BaseTableSize).
-			t.fileSz[i] = s.kv.opt.MemTableSize
+			t.fileSz[i] = s.kv.opt.MemTableSize // 64M
 		} else if i <= t.baseLevel {
-			t.fileSz[i] = tsz
+			t.fileSz[i] = tsz // 小于base层的文件大小阈值为2M(每层5个文件)
 		} else {
-			tsz *= int64(s.kv.opt.TableSizeMultiplier)
+			tsz *= int64(s.kv.opt.TableSizeMultiplier) // 大于base层的文件大小扩大10倍
 			t.fileSz[i] = tsz
 		}
 	}
 
+	// baseLevel(倒数第一个实际数据量小于目标阈值的层)
+	// 以下循环等价于后两部分代码功能 ???
+	// for i := len(s.levels) - 1; i > t.baseLevel; i-- {
+	// 	if s.levels[i].getTotalSize() < t.targetSz[i] {
+	// 		t.baseLevel = i
+	// 		break
+	// 	}
+	// }
+
 	// Bring the base level down to the last empty level.
-	for i := t.baseLevel + 1; i < len(s.levels)-1; i++ {
+	// 按层级实际大小向下调整baseLevel(倒数第一个空层)
+	for i := t.baseLevel + 1; i < len(s.levels)-1; i++ { // 排除最后一层
 		if s.levels[i].getTotalSize() > 0 {
 			break
 		}
@@ -434,7 +446,7 @@ func (s *levelsController) levelTargets() targets {
 func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 	defer lc.Done()
 
-	randomDelay := time.NewTimer(time.Duration(rand.Int31n(1000)) * time.Millisecond) // [0,999]
+	randomDelay := time.NewTimer(time.Duration(rand.Int31n(1000)) * time.Millisecond) // 保证多个worker不同时执行[0,999]
 	select {
 	case <-randomDelay.C:
 	case <-lc.HasBeenClosed():
@@ -442,7 +454,7 @@ func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 		return
 	}
 
-	moveL0toFront := func(prios []compactionPriority) []compactionPriority { // 移动level0的sst到列表启始
+	moveL0toFront := func(prios []compactionPriority) []compactionPriority { // 移动L0到列表启始
 		idx := -1
 		for i, p := range prios {
 			if p.level == 0 {
@@ -476,7 +488,7 @@ func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 
 	runOnce := func() bool {
 		prios := s.pickCompactLevels()
-		if id == 0 {
+		if id == 0 { // 只有worker0才移动L0到列表开始
 			// Worker ID zero prefers to compact L0 always.
 			prios = moveL0toFront(prios)
 		}
@@ -570,16 +582,16 @@ func (s *levelsController) pickCompactLevels() (prios []compactionPriority) {
 	// Overall what this means is, if the bottom level is already overflowing, then de-prioritize
 	// compaction of the above level. If the bottom level is not full, then increase the priority of
 	// above level.
-	var prevLevel int
+	var prevLevel int                                          // baseLevel的前一级是L0
 	for level := t.baseLevel; level < len(s.levels); level++ { // prevLevel=i-1, level=i
-		if prios[prevLevel].adjusted >= 1 {
+		if prios[prevLevel].adjusted >= 1 { // adjusted == score
 			// Avoid absurdly large scores by placing a floor on the score that we'll
 			// adjust a level by. The value of 0.01 was chosen somewhat arbitrarily
 			const minScore = 0.01
 			if prios[level].score >= minScore {
-				prios[prevLevel].adjusted /= prios[level].adjusted
+				prios[prevLevel].adjusted /= prios[level].adjusted // 放大prios[prevLevel].adjusted*(1/prios[level].adjusted)倍
 			} else {
-				prios[prevLevel].adjusted /= minScore // 相当于*100倍
+				prios[prevLevel].adjusted /= minScore // 放大100倍(adjusted*(1/0.01))
 			}
 		}
 		prevLevel = level
