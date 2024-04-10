@@ -491,7 +491,7 @@ func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 		for _, p := range prios {
 			if id == 0 && p.level == 0 {
 				// Allow worker zero to run level 0, irrespective of its adjusted score.
-			} else if p.adjusted < 1.0 {
+			} else if p.adjusted < 1.0 { // 到达有效数据没有超过目标阈值的层级结束
 				break
 			}
 			if run(p) {
@@ -532,8 +532,8 @@ func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 
 type compactionPriority struct {
 	level        int
-	score        float64
-	adjusted     float64
+	score        float64 // 有效数据与目标阈值的比值
+	adjusted     float64 // 当本层score>=1.0时根据下层score进行放大
 	dropPrefixes [][]byte
 	t            targets
 }
@@ -1037,9 +1037,9 @@ func containsAnyPrefixes(table *table.Table, listOfPrefixes [][]byte) bool {
 type compactDef struct {
 	span *otrace.Span
 
-	compactorId int
-	t           targets
-	p           compactionPriority
+	compactorId int                // 协程id
+	t           targets            // 目标阈值(层级,文件)
+	p           compactionPriority // 压实优先级
 	thisLevel   *levelHandler
 	nextLevel   *levelHandler
 
@@ -1372,7 +1372,7 @@ func (s *levelsController) fillTables(cd *compactDef) bool {
 		return false
 	}
 	// We're doing a maxLevel to maxLevel compaction. Pick tables based on the stale data size.
-	if cd.thisLevel.isLastLevel() {
+	if cd.thisLevel.isLastLevel() { // Lmax层
 		return s.fillMaxLevelTables(tables, cd)
 	}
 	// We pick tables, so we compact older tables first. This is similar to
@@ -1530,7 +1530,7 @@ func (s *levelsController) doCompact(id int, p compactionPriority) error {
 		span:         span,
 		p:            p,
 		t:            p.t,
-		thisLevel:    s.levels[l],
+		thisLevel:    s.levels[l], // 当前层
 		dropPrefixes: p.dropPrefixes,
 	}
 
@@ -1544,6 +1544,7 @@ func (s *levelsController) doCompact(id int, p compactionPriority) error {
 	} else {
 		cd.nextLevel = cd.thisLevel
 		// We're not compacting the last level so pick the next level.
+		// 此条件不会触发,pickCompactLevels函数返回结果不包含Lmax
 		if !cd.thisLevel.isLastLevel() {
 			cd.nextLevel = s.levels[l+1]
 		}
