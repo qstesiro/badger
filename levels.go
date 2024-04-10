@@ -384,17 +384,17 @@ func (s *levelsController) levelTargets() targets {
 	}
 
 	t := targets{
-		targetSz: make([]int64, len(s.levels)), // 层级目标阈值
+		targetSz: make([]int64, len(s.levels)), // 层级目标阈值(排除L0)
 		fileSz:   make([]int64, len(s.levels)), // 层级文件目标阈值
 	}
 
 	// DB size is the size of the last level.
 	dbSize := s.lastLevel().getTotalSize()
-	for i := len(s.levels) - 1; i > 0; i-- { // 初始化targetSz,不包含L0
+	for i := len(s.levels) - 1; i > 0; i-- { // 初始化targetSz,排除L0
 		ltarget := adjust(dbSize)
 		t.targetSz[i] = ltarget
 		if t.baseLevel == 0 && ltarget <= s.kv.opt.BaseLevelSize { // ltarget >= BaseLevelSize
-			t.baseLevel = i // 倒数第一个小于最小层级目标阈值的层,如果条件一直未成立则baseLevel=0
+			t.baseLevel = i // 倒数第一个小于最小层级目标阈值的层, 如果条件一直未成立则baseLevel=0
 		}
 		dbSize /= int64(s.kv.opt.LevelSizeMultiplier) // 上一层目标大小缩小10倍
 	}
@@ -415,14 +415,9 @@ func (s *levelsController) levelTargets() targets {
 		}
 	}
 
-	// baseLevel(倒数第一个实际数据量小于目标阈值的层)
-	// 以下循环等价于后两部分代码功能 ???
-	// for i := len(s.levels) - 1; i > t.baseLevel; i-- {
-	// 	if s.levels[i].getTotalSize() < t.targetSz[i] {
-	// 		t.baseLevel = i
-	// 		break
-	// 	}
-	// }
+	// 以下两部分代码功能为
+	// 查找第一个层级实际数据大小!=0且层级实际数据大小<层级目标阈值的层
+	// 如果未找到则查找最后一个层级大小==0的层
 
 	// Bring the base level down to the last empty level.
 	// 按层级实际大小向下调整baseLevel(倒数第一个空层)
@@ -437,6 +432,7 @@ func (s *levelsController) levelTargets() targets {
 	// target size, pick the next level as the base level.
 	b := t.baseLevel
 	lvl := s.levels
+	// 判定空层的下一层级大小是否<目标阈值
 	if b < len(lvl)-1 && lvl[b].getTotalSize() == 0 && lvl[b+1].getTotalSize() < t.targetSz[b+1] {
 		t.baseLevel++
 	}
@@ -561,15 +557,17 @@ func (s *levelsController) pickCompactLevels() (prios []compactionPriority) {
 	}
 
 	// Add L0 priority based on the number of tables.
+	// L0按文件个数进行score计算
 	addPriority(0, float64(s.levels[0].numTables())/float64(s.kv.opt.NumLevelZeroTables))
 
 	// All other levels use size to calculate priority.
+	// 按有效数据大小计算各层优先级
 	for i := 1; i < len(s.levels); i++ { // 排除L0
 		// Don't consider those tables that are already being compacted right now.
 		delSize := s.cstatus.delSize(i)
 
 		l := s.levels[i]
-		sz := l.getTotalSize() - delSize
+		sz := l.getTotalSize() - delSize // 效数据大小
 		addPriority(i, float64(sz)/float64(t.targetSz[i]))
 	}
 	y.AssertTrue(len(prios) == len(s.levels))
@@ -584,14 +582,17 @@ func (s *levelsController) pickCompactLevels() (prios []compactionPriority) {
 	// above level.
 	var prevLevel int                                          // baseLevel的前一级是L0
 	for level := t.baseLevel; level < len(s.levels); level++ { // prevLevel=i-1, level=i
-		if prios[prevLevel].adjusted >= 1 { // adjusted == score
+		if prios[prevLevel].adjusted >= 1 { // 有效数据是否超过目标阈值
 			// Avoid absurdly large scores by placing a floor on the score that we'll
 			// adjust a level by. The value of 0.01 was chosen somewhat arbitrarily
 			const minScore = 0.01
-			if prios[level].score >= minScore {
-				prios[prevLevel].adjusted /= prios[level].adjusted // 放大prios[prevLevel].adjusted*(1/prios[level].adjusted)倍
-			} else {
-				prios[prevLevel].adjusted /= minScore // 放大100倍(adjusted*(1/0.01))
+			if prios[level].score >= minScore { // 有效数据>=层级目标阈值1/100
+				// 放大prios[prevLevel].adjusted*(1/prios[level].adjusted)倍(0,100)
+				// 等价于prios[prevLevel].adjusted /= prios[level].score
+				prios[prevLevel].adjusted /= prios[level].adjusted
+			} else { // 有效数据<层级目标阈值1/100
+				// 放大100倍(adjusted*(1/0.01))
+				prios[prevLevel].adjusted /= minScore
 			}
 		}
 		prevLevel = level
@@ -613,7 +614,7 @@ func (s *levelsController) pickCompactLevels() (prios []compactionPriority) {
 	sort.Slice(prios, func(i, j int) bool {
 		return prios[i].adjusted > prios[j].adjusted
 	})
-	return prios
+	return prios // 排除Lmax之外的所有有效数据超过层级目标阈值的层且按adjusted降序
 }
 
 // checkOverlap checks if the given tables overlap with any level from the given "lev" onwards.
@@ -1362,8 +1363,8 @@ func (s *levelsController) fillMaxLevelTables(tables []*table.Table, cd *compact
 }
 
 func (s *levelsController) fillTables(cd *compactDef) bool {
-	cd.lockLevels()
-	defer cd.unlockLevels()
+	cd.lockLevels()         // +锁
+	defer cd.unlockLevels() // -锁
 
 	tables := make([]*table.Table, len(cd.thisLevel.tables))
 	copy(tables, cd.thisLevel.tables)
@@ -1536,7 +1537,7 @@ func (s *levelsController) doCompact(id int, p compactionPriority) error {
 	// While picking tables to be compacted, both levels' tables are expected to
 	// remain unchanged.
 	if l == 0 {
-		cd.nextLevel = s.levels[p.t.baseLevel]
+		cd.nextLevel = s.levels[p.t.baseLevel] // L0直接压实到Lbase
 		if !s.fillTablesL0(&cd) {
 			return errFillTables
 		}
