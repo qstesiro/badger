@@ -50,7 +50,7 @@ func (r keyRange) equals(dst keyRange) bool {
 		r.inf == dst.inf
 }
 
-func (r *keyRange) extend(kr keyRange) {
+func (r *keyRange) extend(kr keyRange) { // 并集
 	// TODO(ibrahim): Is this needed?
 	if kr.isEmpty() {
 		return
@@ -77,7 +77,7 @@ func (r keyRange) overlapsWith(dst keyRange) bool {
 	// TODO(ibrahim): Do you need this?
 	// Empty dst doesn't overlap with anything.
 	if dst.isEmpty() {
-		return false
+		return false // 什么意思 ???
 	}
 	if r.inf || dst.inf {
 		return true
@@ -99,7 +99,7 @@ func (r keyRange) overlapsWith(dst keyRange) bool {
 
 // getKeyRange returns the smallest and the biggest in the list of tables.
 // TODO(naman): Write a test for this. The smallest and the biggest should
-// be the smallest of the leftmost table and the biggest of the right most table.
+// be the smallest of the left most table and the biggest of the right most table.
 func getKeyRange(tables ...*table.Table) keyRange {
 	if len(tables) == 0 {
 		return keyRange{}
@@ -107,6 +107,7 @@ func getKeyRange(tables ...*table.Table) keyRange {
 	smallest := tables[0].Smallest()
 	biggest := tables[0].Biggest()
 	for i := 1; i < len(tables); i++ {
+		// CompareKeys比较规则: 如果key相同则比较ts
 		if y.CompareKeys(tables[i].Smallest(), smallest) < 0 {
 			smallest = tables[i].Smallest()
 		}
@@ -118,8 +119,8 @@ func getKeyRange(tables ...*table.Table) keyRange {
 	// We pick all the versions of the smallest and the biggest key. Note that version zero would
 	// be the rightmost key, considering versions are default sorted in descending order.
 	return keyRange{
-		left:  y.KeyWithTs(y.ParseKey(smallest), math.MaxUint64),
-		right: y.KeyWithTs(y.ParseKey(biggest), 0),
+		left:  y.KeyWithTs(y.ParseKey(smallest), math.MaxUint64), // version = 0
+		right: y.KeyWithTs(y.ParseKey(biggest), 0),               // version = math.MaxUint64
 	}
 }
 
@@ -128,7 +129,7 @@ type levelCompactStatus struct {
 	delSize int64
 }
 
-func (lcs *levelCompactStatus) debug() string {
+func (lcs *levelCompactStatus) debug() string { // 转文本信息
 	var b bytes.Buffer
 	for _, r := range lcs.ranges {
 		b.WriteString(r.String())
@@ -145,7 +146,7 @@ func (lcs *levelCompactStatus) overlapsWith(dst keyRange) bool {
 	return false
 }
 
-func (lcs *levelCompactStatus) remove(dst keyRange) bool {
+func (lcs *levelCompactStatus) remove(dst keyRange) bool { // 删除完全相等的keyRange
 	final := lcs.ranges[:0]
 	var found bool
 	for _, r := range lcs.ranges {

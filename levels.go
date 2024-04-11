@@ -1373,11 +1373,11 @@ func (s *levelsController) fillTables(cd *compactDef) bool {
 	}
 	// We're doing a maxLevel to maxLevel compaction. Pick tables based on the stale data size.
 	if cd.thisLevel.isLastLevel() { // Lmax层
-		return s.fillMaxLevelTables(tables, cd)
+		return s.fillMaxLevelTables(tables, cd) // 处理Lmax后直接返回
 	}
 	// We pick tables, so we compact older tables first. This is similar to
 	// kOldestLargestSeqFirst in RocksDB.
-	s.sortByHeuristic(tables, cd)
+	s.sortByHeuristic(tables, cd) // 按sst中最大版本(最大创建时间)升序排序
 
 	for _, t := range tables {
 		cd.thisSize = t.Size()
