@@ -1384,10 +1384,10 @@ func (s *levelsController) fillTables(cd *compactDef) bool {
 		cd.thisRange = getKeyRange(t)
 		// If we're already compacting this range, don't do anything.
 		if s.cstatus.overlapsWith(cd.thisLevel.level, cd.thisRange) {
-			continue
+			continue // 已有其它worker已经在操作相关的区间
 		}
 		cd.top = []*table.Table{t}
-		left, right := cd.nextLevel.overlappingTables(levelHandlerRLocked{}, cd.thisRange)
+		left, right := cd.nextLevel.overlappingTables(levelHandlerRLocked{}, cd.thisRange) // [left,right)
 
 		cd.bot = make([]*table.Table, right-left)
 		copy(cd.bot, cd.nextLevel.tables[left:right])
@@ -1401,14 +1401,13 @@ func (s *levelsController) fillTables(cd *compactDef) bool {
 			return true
 		}
 		cd.nextRange = getKeyRange(cd.bot...)
-
 		if s.cstatus.overlapsWith(cd.nextLevel.level, cd.nextRange) {
-			continue
+			continue // 已有其它worker已经在操作相关的区间
 		}
 		if !s.cstatus.compareAndAdd(thisAndNextLevelRLocked{}, *cd) {
-			continue
+			continue // 添加compactDef失败(thisRange或nextRange有重叠)则尝试添加下一个
 		}
-		return true
+		return true // 添加compactDef成功直接返回
 	}
 	return false
 }
@@ -1525,7 +1524,7 @@ func (s *levelsController) doCompact(id int, p compactionPriority) error {
 	_, span := otrace.StartSpan(context.Background(), "Badger.Compaction")
 	defer span.End()
 
-	cd := compactDef{
+	cd := compactDef{ // 构建公共部分字段,具体table相关字段在fillTables[L0]函数中设置
 		compactorId:  id,
 		span:         span,
 		p:            p,
@@ -1544,7 +1543,7 @@ func (s *levelsController) doCompact(id int, p compactionPriority) error {
 	} else {
 		cd.nextLevel = cd.thisLevel
 		// We're not compacting the last level so pick the next level.
-		// 此条件不会触发,pickCompactLevels函数返回结果不包含Lmax
+		// 此条件必定触发,pickCompactLevels函数返回结果不包含Lmax
 		if !cd.thisLevel.isLastLevel() {
 			cd.nextLevel = s.levels[l+1]
 		}

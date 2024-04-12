@@ -119,8 +119,8 @@ func getKeyRange(tables ...*table.Table) keyRange {
 	// We pick all the versions of the smallest and the biggest key. Note that version zero would
 	// be the rightmost key, considering versions are default sorted in descending order.
 	return keyRange{
-		left:  y.KeyWithTs(y.ParseKey(smallest), math.MaxUint64), // version = 0
-		right: y.KeyWithTs(y.ParseKey(biggest), 0),               // version = math.MaxUint64
+		left:  y.KeyWithTs(y.ParseKey(smallest), math.MaxUint64), // version = 0 最新值
+		right: y.KeyWithTs(y.ParseKey(biggest), 0),               // version = math.MaxUint64 最旧值
 	}
 }
 
@@ -163,30 +163,30 @@ func (lcs *levelCompactStatus) remove(dst keyRange) bool { // 删除完全相等
 type compactStatus struct {
 	sync.RWMutex
 	levels []*levelCompactStatus
-	tables map[uint64]struct{}
+	tables map[uint64]struct{} // top,bot所有表id
 }
 
 func (cs *compactStatus) overlapsWith(level int, this keyRange) bool {
-	cs.RLock()
-	defer cs.RUnlock()
+	cs.RLock()         // +锁
+	defer cs.RUnlock() // -锁
 
 	thisLevel := cs.levels[level]
 	return thisLevel.overlapsWith(this)
 }
 
 func (cs *compactStatus) delSize(l int) int64 {
-	cs.RLock()
-	defer cs.RUnlock()
+	cs.RLock()         // +锁
+	defer cs.RUnlock() // -锁
 	return cs.levels[l].delSize
 }
 
-type thisAndNextLevelRLocked struct{}
+type thisAndNextLevelRLocked struct{} // 假锁 ???
 
 // compareAndAdd will check whether we can run this compactDef. That it doesn't overlap with any
 // other running compaction. If it can be run, it would store this run in the compactStatus state.
 func (cs *compactStatus) compareAndAdd(_ thisAndNextLevelRLocked, cd compactDef) bool {
-	cs.Lock()
-	defer cs.Unlock()
+	cs.Lock()         // +锁
+	defer cs.Unlock() // -锁
 
 	tl := cd.thisLevel.level
 	y.AssertTruef(tl < len(cs.levels), "Got level %d. Max levels: %d", tl, len(cs.levels))
@@ -206,16 +206,16 @@ func (cs *compactStatus) compareAndAdd(_ thisAndNextLevelRLocked, cd compactDef)
 
 	thisLevel.ranges = append(thisLevel.ranges, cd.thisRange)
 	nextLevel.ranges = append(nextLevel.ranges, cd.nextRange)
-	thisLevel.delSize += cd.thisSize
-	for _, t := range append(cd.top, cd.bot...) {
+	thisLevel.delSize += cd.thisSize              // 当前层表将要被压实到下一层,所以增加delSize
+	for _, t := range append(cd.top, cd.bot...) { // 添加所有top,bot表
 		cs.tables[t.ID()] = struct{}{}
 	}
 	return true
 }
 
 func (cs *compactStatus) delete(cd compactDef) {
-	cs.Lock()
-	defer cs.Unlock()
+	cs.Lock()         // +锁
+	defer cs.Unlock() // -锁
 
 	tl := cd.thisLevel.level
 	y.AssertTruef(tl < len(cs.levels), "Got level %d. Max levels: %d", tl, len(cs.levels))
@@ -223,7 +223,7 @@ func (cs *compactStatus) delete(cd compactDef) {
 	thisLevel := cs.levels[cd.thisLevel.level]
 	nextLevel := cs.levels[cd.nextLevel.level]
 
-	thisLevel.delSize -= cd.thisSize
+	thisLevel.delSize -= cd.thisSize // 当前层表将要被压实到下一层,所以增加delSize
 	found := thisLevel.remove(cd.thisRange)
 	// The following check makes sense only if we're compacting more than one
 	// table. In case of the max level, we might rewrite a single table to
@@ -232,7 +232,7 @@ func (cs *compactStatus) delete(cd compactDef) {
 		found = nextLevel.remove(cd.nextRange) && found
 	}
 
-	if !found {
+	if !found { // thislevel或nextlevel有一个没有found则输出异常
 		this := cd.thisRange
 		next := cd.nextRange
 		fmt.Printf("Looking for: %s in this level %d.\n", this, tl)
@@ -242,7 +242,7 @@ func (cs *compactStatus) delete(cd compactDef) {
 		fmt.Printf("Next Level:\n%s\n", nextLevel.debug())
 		log.Fatal("keyRange not found")
 	}
-	for _, t := range append(cd.top, cd.bot...) {
+	for _, t := range append(cd.top, cd.bot...) { // 移除所有top,bot表
 		_, ok := cs.tables[t.ID()]
 		y.AssertTrue(ok)
 		delete(cs.tables, t.ID())
