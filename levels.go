@@ -475,7 +475,7 @@ func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 		case nil:
 			return true
 		case errFillTables:
-			// pass
+			// pass 对应层没有找到合适的表增加到compactStatus进行压实操作
 		default:
 			s.kv.opt.Warningf("While running doCompact: %v\n", err)
 		}
@@ -522,7 +522,7 @@ func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 				tryLmaxToLmaxCompaction()
 				count = 0
 			} else {
-				runOnce()
+				runOnce() // 未判定返回结果
 			}
 		case <-lc.HasBeenClosed():
 			return
@@ -1191,10 +1191,12 @@ func (s *levelsController) fillTablesL0ToLbase(cd *compactDef) bool {
 	// L0->Lbase compactions. Those functions wouldn't be setting the adjusted score.
 	if cd.p.adjusted > 0.0 && cd.p.adjusted < 1.0 {
 		// Do not compact to Lbase if adjusted score is less than 1.0.
+		// 代表下一层有效数据超出目标阈值比当前层更新多
+		// 需要先压实下一层的数据,在下一层腾出更多空间后再压实
 		return false
 	}
-	cd.lockLevels()
-	defer cd.unlockLevels()
+	cd.lockLevels()         // +锁
+	defer cd.unlockLevels() // -锁
 
 	top := cd.thisLevel.tables
 	if len(top) == 0 {
@@ -1221,14 +1223,14 @@ func (s *levelsController) fillTablesL0ToLbase(cd *compactDef) bool {
 		}
 	}
 	cd.thisRange = getKeyRange(out...)
-	cd.top = out
+	cd.top = out // top是表集合
 
 	left, right := cd.nextLevel.overlappingTables(levelHandlerRLocked{}, cd.thisRange)
 	cd.bot = make([]*table.Table, right-left)
 	copy(cd.bot, cd.nextLevel.tables[left:right])
 
-	if len(cd.bot) == 0 {
-		cd.nextRange = cd.thisRange
+	if len(cd.bot) == 0 { // 下一层没有找到范围重叠(没有需要合并的操作)
+		cd.nextRange = cd.thisRange // 下层键范围不变
 	} else {
 		cd.nextRange = getKeyRange(cd.bot...)
 	}
@@ -1362,6 +1364,9 @@ func (s *levelsController) fillMaxLevelTables(tables []*table.Table, cd *compact
 	return s.cstatus.compareAndAdd(thisAndNextLevelRLocked{}, *cd)
 }
 
+// 根据compactDef的定义从thisLevel中找一个表(从旧到新)作为top与thisRange
+// 再根据thisRange从nextLevel中找到有重叠的多(一)个表作为bot并记录nextRange
+// 最后将compactDef加入到compactStats中暂存为后续的具体压实操作做准备
 func (s *levelsController) fillTables(cd *compactDef) bool {
 	cd.lockLevels()         // +锁
 	defer cd.unlockLevels() // -锁
@@ -1386,15 +1391,15 @@ func (s *levelsController) fillTables(cd *compactDef) bool {
 		if s.cstatus.overlapsWith(cd.thisLevel.level, cd.thisRange) {
 			continue // 已有其它worker已经在操作相关的区间
 		}
-		cd.top = []*table.Table{t}
+		cd.top = []*table.Table{t}                                                         // top实际只有单个表
 		left, right := cd.nextLevel.overlappingTables(levelHandlerRLocked{}, cd.thisRange) // [left,right)
 
 		cd.bot = make([]*table.Table, right-left)
 		copy(cd.bot, cd.nextLevel.tables[left:right])
 
-		if len(cd.bot) == 0 {
+		if len(cd.bot) == 0 { // 下一层没有找到范围重叠(没有需要合并的操作)
 			cd.bot = []*table.Table{}
-			cd.nextRange = cd.thisRange
+			cd.nextRange = cd.thisRange // 下层键范围不变
 			if !s.cstatus.compareAndAdd(thisAndNextLevelRLocked{}, *cd) {
 				continue
 			}
