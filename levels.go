@@ -1085,6 +1085,8 @@ func (s *levelsController) addSplits(cd *compactDef) {
 		// last entry in bottom table.
 		if i == len(cd.bot)-1 {
 			addRange([]byte{})
+			// splits=[left1,right1)[left2,right2)...[leftn,{}) (leftX=rightX-1, X>1)
+			// 最后的右边界没有保存 ???
 			return
 		}
 		if i%width == width-1 {
@@ -1094,7 +1096,7 @@ func (s *levelsController) addSplits(cd *compactDef) {
 			// Top table is [A1...C3(deleted)]
 			// bot table is [B1....C2]
 			// It will generate a split [A1 ... C0], including any records of Key C.
-			right := y.KeyWithTs(y.ParseKey(t.Biggest()), 0)
+			right := y.KeyWithTs(y.ParseKey(t.Biggest()), 0) // version = MaxUint64(key相同的情况下,version更大)
 			addRange(right)
 		}
 	}
@@ -1434,7 +1436,7 @@ func (s *levelsController) fillTables(cd *compactDef) bool {
 }
 
 func (s *levelsController) runCompactDef(id, l int, cd compactDef) (err error) {
-	if len(cd.t.fileSz) == 0 {
+	if len(cd.t.fileSz) == 0 { // 文件阈值必须设置
 		return errors.New("Filesizes cannot be zero. Targets are not set")
 	}
 	timeStart := time.Now()
@@ -1448,7 +1450,7 @@ func (s *levelsController) runCompactDef(id, l int, cd compactDef) (err error) {
 	} else {
 		s.addSplits(&cd)
 	}
-	if len(cd.splits) == 0 {
+	if len(cd.splits) == 0 { // 同层压实时bot为nil
 		cd.splits = append(cd.splits, keyRange{})
 	}
 
@@ -1482,7 +1484,7 @@ func (s *levelsController) runCompactDef(id, l int, cd compactDef) (err error) {
 
 	sizeNewTables := int64(0)
 	sizeOldTables := int64(0)
-	if s.kv.opt.MetricsEnabled {
+	if s.kv.opt.MetricsEnabled { // 指标记录
 		sizeNewTables = getSizes(newTables)
 		sizeOldTables = getSizes(cd.bot) + getSizes(cd.top)
 		y.NumBytesCompactionWrittenAdd(s.kv.opt.MetricsEnabled, nextLevel.strLevel, sizeNewTables)
@@ -1490,7 +1492,8 @@ func (s *levelsController) runCompactDef(id, l int, cd compactDef) (err error) {
 
 	// See comment earlier in this function about the ordering of these ops, and the order in which
 	// we access levels when reading.
-	if err := nextLevel.replaceTables(cd.bot, newTables); err != nil {
+	// 以下两步操作都没有同步修改manifest ???
+	if err := nextLevel.replaceTables(cd.bot, newTables); err != nil { // 删除bot,添加newTables
 		return err
 	}
 	if err := thisLevel.deleteTables(cd.top); err != nil {
@@ -1499,7 +1502,7 @@ func (s *levelsController) runCompactDef(id, l int, cd compactDef) (err error) {
 
 	// Note: For level 0, while doCompact is running, it is possible that new tables are added.
 	// However, the tables are added only to the end, so it is ok to just delete the first table.
-
+	// 以下是关于压实的统计日志
 	from := append(tablesToString(cd.top), tablesToString(cd.bot)...)
 	to := tablesToString(newTables)
 	if dur := time.Since(timeStart); dur > 2*time.Second {

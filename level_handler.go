@@ -88,7 +88,7 @@ func (s *levelHandler) initTables(tables []*table.Table) {
 func (s *levelHandler) deleteTables(toDel []*table.Table) error {
 	s.Lock() // s.Unlock() below
 
-	toDelMap := make(map[uint64]struct{})
+	toDelMap := make(map[uint64]struct{}) // 表id映射
 	for _, t := range toDel {
 		toDelMap[t.ID()] = struct{}{}
 	}
@@ -98,16 +98,16 @@ func (s *levelHandler) deleteTables(toDel []*table.Table) error {
 	for _, t := range s.tables {
 		_, found := toDelMap[t.ID()]
 		if !found {
-			newTables = append(newTables, t)
+			newTables = append(newTables, t) // 要保留的表
 			continue
 		}
-		s.subtractSize(t)
+		s.subtractSize(t) // 减去要删除的表大小
 	}
 	s.tables = newTables
 
 	s.Unlock() // Unlock s _before_ we DecrRef our tables, which can be slow.
 
-	return decrRefs(toDel)
+	return decrRefs(toDel) // 通过减少引用计数删除表
 }
 
 // replaceTables will replace tables[left:right] with newTables. Note this EXCLUDES tables[right].
@@ -116,9 +116,9 @@ func (s *levelHandler) replaceTables(toDel, toAdd []*table.Table) error {
 	// Need to re-search the range of tables in this level to be replaced as other goroutines might
 	// be changing it as well.  (They can't touch our tables, but if they add/remove other tables,
 	// the indices get shifted around.)
-	s.Lock() // We s.Unlock() below.
+	s.Lock() // We s.Unlock() below. +锁
 
-	toDelMap := make(map[uint64]struct{})
+	toDelMap := make(map[uint64]struct{}) // 表id映射
 	for _, t := range toDel {
 		toDelMap[t.ID()] = struct{}{}
 	}
@@ -126,26 +126,26 @@ func (s *levelHandler) replaceTables(toDel, toAdd []*table.Table) error {
 	for _, t := range s.tables {
 		_, found := toDelMap[t.ID()]
 		if !found {
-			newTables = append(newTables, t)
+			newTables = append(newTables, t) // 要保留的表
 			continue
 		}
-		s.subtractSize(t)
+		s.subtractSize(t) // 减去要删除的表大小
 	}
 
 	// Increase totalSize first.
 	for _, t := range toAdd {
-		s.addSize(t)
-		t.IncrRef()
-		newTables = append(newTables, t)
+		s.addSize(t)                     // 增加新表的大小
+		t.IncrRef()                      // 增加引用计数
+		newTables = append(newTables, t) // 增加新表
 	}
 
 	// Assign tables.
 	s.tables = newTables
-	sort.Slice(s.tables, func(i, j int) bool {
+	sort.Slice(s.tables, func(i, j int) bool { // 按键(升序)排序
 		return y.CompareKeys(s.tables[i].Smallest(), s.tables[j].Smallest()) < 0
 	})
-	s.Unlock() // s.Unlock before we DecrRef tables -- that can be slow.
-	return decrRefs(toDel)
+	s.Unlock()             // s.Unlock before we DecrRef tables -- that can be slow. -锁
+	return decrRefs(toDel) // 通过减少引用计数删除表
 }
 
 // addTable adds toAdd table to levelHandler. Normally when we add tables to levelHandler, we sort
