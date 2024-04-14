@@ -491,7 +491,9 @@ func (s *levelsController) runCompactor(id int, lc *z.Closer) {
 		for _, p := range prios {
 			if id == 0 && p.level == 0 {
 				// Allow worker zero to run level 0, irrespective of its adjusted score.
-			} else if p.adjusted < 1.0 { // 到达有效数据没有超过目标阈值的层级结束
+			} else if p.adjusted < 1.0 {
+				// 本层有效数据超出目标阈值但其下层有效数据超出目标阈值更多
+				// 所以暂时不将本层向下层压实,等后续下层先压实后再操作
 				break
 			}
 			if run(p) {
@@ -1158,7 +1160,7 @@ func (s *levelsController) fillTablesL0ToL0(cd *compactDef) bool {
 			continue
 		}
 		if _, beingCompacted := s.cstatus.tables[t.ID()]; beingCompacted {
-			continue
+			continue // 跳过已经在处理中的表
 		}
 		out = append(out, t)
 	}
@@ -1171,6 +1173,14 @@ func (s *levelsController) fillTablesL0ToL0(cd *compactDef) bool {
 	cd.top = out
 
 	// Avoid any other L0 -> Lbase from happening, while this is going on.
+	// 设置inf保证此处理期间不会再有其它worker处理L0
+	// 此处没有调用compareAndAdd因为只需要设置以下两部分:
+	// + 本层键范围
+	// + 增加top表到压实状态记录中
+	// 不需要设置以下内容:
+	// - 下层键范围
+	// - 本层删除数据大小
+	// - 增加bot表到压实状态记录中
 	thisLevel := s.cstatus.levels[cd.thisLevel.level]
 	thisLevel.ranges = append(thisLevel.ranges, infRange)
 	for _, t := range out {
@@ -1179,7 +1189,7 @@ func (s *levelsController) fillTablesL0ToL0(cd *compactDef) bool {
 
 	// For L0->L0 compaction, we set the target file size to max, so the output is always one file.
 	// This significantly decreases the L0 table stalls and improves the performance.
-	cd.t.fileSz[0] = math.MaxUint32
+	cd.t.fileSz[0] = math.MaxUint32 // 由64M修改为MaxUint32
 	return true
 }
 
@@ -1189,10 +1199,13 @@ func (s *levelsController) fillTablesL0ToLbase(cd *compactDef) bool {
 	}
 	// We keep cd.p.adjusted > 0.0 here to allow functions in db.go to artificially trigger
 	// L0->Lbase compactions. Those functions wouldn't be setting the adjusted score.
+	// 手工触发的情况下adjusted=0, adjusted>0.0 保证手工触发可被执行 ~~~
 	if cd.p.adjusted > 0.0 && cd.p.adjusted < 1.0 {
 		// Do not compact to Lbase if adjusted score is less than 1.0.
-		// 代表下一层有效数据超出目标阈值比当前层更新多
-		// 需要先压实下一层的数据,在下一层腾出更多空间后再压实
+		// 此部分正常情况不会被触发
+		// 如果L0被pick到代表L0的有效数据一定是大于目标阈值了, score>=1.0 && adjusted>=1.0
+		// 且Lbase有效数据或者小于目标阈值或者为0, 0<=score<1.0 && 0<=adjusted<1.0
+		// 所以 L0.adjusted/Lbase.adjust > L0.adjusted
 		return false
 	}
 	cd.lockLevels()         // +锁
@@ -1251,6 +1264,9 @@ func (s *levelsController) fillTablesL0(cd *compactDef) bool {
 	if ok := s.fillTablesL0ToLbase(cd); ok {
 		return true
 	}
+	// 当有其它的worker已经在处理L0->LBase时fillTablesL0ToLbase失败
+	// 增加L0->L0的处理逻辑是因为除L0层外其它层都是整层有序只有L0层表之间无序(表内块之间有序)
+	// 为了提升查询性能尽可能将L0层的多个文件合并为一个文件避免在多个文件中查询
 	return s.fillTablesL0ToL0(cd)
 }
 
