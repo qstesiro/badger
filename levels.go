@@ -718,20 +718,20 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 				}
 			}
 
-			if !y.SameKey(it.Key(), lastKey) {
+			if !y.SameKey(it.Key(), lastKey) { // 切换新key
 				firstKeyHasDiscardSet = false
-				if len(kr.right) > 0 && y.CompareKeys(it.Key(), kr.right) >= 0 {
-					break
+				if len(kr.right) > 0 && y.CompareKeys(it.Key(), kr.right) >= 0 { // [left,right)
+					break // 结束当前区间
 				}
 				if builder.ReachedCapacity() {
 					// Only break if we are on a different key, and have reached capacity. We want
 					// to ensure that all versions of the key are stored in the same sstable, and
 					// not divided across multiple tables at the same level.
-					break
+					break // 结束当前区间
 				}
-				lastKey = y.SafeCopy(lastKey, it.Key())
-				numVersions = 0
-				firstKeyHasDiscardSet = it.Value().Meta&bitDiscardEarlierVersions > 0
+				lastKey = y.SafeCopy(lastKey, it.Key())                               // 记录当前key
+				numVersions = 0                                                       // 版本设置为0
+				firstKeyHasDiscardSet = it.Value().Meta&bitDiscardEarlierVersions > 0 // 是否丢弃较早的版本
 
 				if len(tableKr.left) == 0 {
 					tableKr.left = y.SafeCopy(tableKr.left, it.Key())
@@ -739,7 +739,7 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 				tableKr.right = lastKey
 
 				rangeCheck++
-				if rangeCheck%5000 == 0 {
+				if rangeCheck%5000 == 0 { // 每切换5000次新键判定
 					// This table's range exceeds the allowed range overlap with the level after
 					// next. So, we stop writing to this table. If we don't do this, then we end up
 					// doing very expensive compactions involving too many tables. To amortize the
@@ -844,13 +844,13 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 			continue
 		}
 		numBuilds++
-		if err := inflightBuilders.Do(); err != nil {
+		if err := inflightBuilders.Do(); err != nil { // +do
 			// Can't return from here, until I decrRef all the tables that I built so far.
 			break
 		}
 		go func(builder *table.Builder, fileID uint64) {
 			var err error
-			defer inflightBuilders.Done(err)
+			defer inflightBuilders.Done(err) // -done
 			defer builder.Close()
 
 			var tbl *table.Table
@@ -886,7 +886,7 @@ func (s *levelsController) compactBuildTables(
 	cd.span.Annotatef(nil, "Top tables count: %v Bottom tables count: %v",
 		len(topTables), len(botTables))
 
-	keepTable := func(t *table.Table) bool {
+	keepTable := func(t *table.Table) bool { // ~~~
 		for _, prefix := range cd.dropPrefixes {
 			if bytes.HasPrefix(t.Smallest(), prefix) &&
 				bytes.HasPrefix(t.Biggest(), prefix) {
@@ -908,27 +908,27 @@ func (s *levelsController) compactBuildTables(
 	newIterator := func() []y.Iterator {
 		// Create iterators across all the tables involved first.
 		var iters []y.Iterator
-		switch {
-		case lev == 0:
+		switch { // 添加top
+		case lev == 0: // L0层topTables可能是多个表
 			iters = appendIteratorsReversed(iters, topTables, table.NOCACHE)
-		case len(topTables) > 0:
+		case len(topTables) > 0: // Lx层topTables只能是一个表
 			y.AssertTrue(len(topTables) == 1)
 			iters = []y.Iterator{topTables[0].NewIterator(table.NOCACHE)}
 		}
 		// Next level has level>=1 and we can use ConcatIterator as key ranges do not overlap.
-		return append(iters, table.NewConcatIterator(valid, table.NOCACHE))
+		return append(iters, table.NewConcatIterator(valid, table.NOCACHE)) // 添加bot
 	}
 
 	res := make(chan *table.Table, 3)
 	inflightBuilders := y.NewThrottle(8 + len(cd.splits))
 	for _, kr := range cd.splits {
 		// Initiate Do here so we can register the goroutines for buildTables too.
-		if err := inflightBuilders.Do(); err != nil {
+		if err := inflightBuilders.Do(); err != nil { // +do
 			s.kv.opt.Errorf("cannot start subcompaction: %+v", err)
 			return nil, nil, err
 		}
 		go func(kr keyRange) {
-			defer inflightBuilders.Done(nil)
+			defer inflightBuilders.Done(nil) // -done
 			it := table.NewMergeIterator(newIterator(), false)
 			defer it.Close()
 			s.subcompact(it, kr, cd, inflightBuilders, res)
@@ -938,7 +938,7 @@ func (s *levelsController) compactBuildTables(
 	var newTables []*table.Table
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go func() {
+	go func() { // 取创建的新表
 		defer wg.Done()
 		for t := range res {
 			newTables = append(newTables, t)
@@ -946,9 +946,9 @@ func (s *levelsController) compactBuildTables(
 	}()
 
 	// Wait for all table builders to finish and also for newTables accumulator to finish.
-	err := inflightBuilders.Finish()
-	close(res)
-	wg.Wait() // Wait for all tables to be picked up.
+	err := inflightBuilders.Finish() // 等待并行压实workers完成
+	close(res)                       // 关闭表chan
+	wg.Wait()                        // Wait for all tables to be picked up.
 
 	if err == nil {
 		// Ensure created files' directory entries are visible.  We don't mind the extra latency
@@ -1463,7 +1463,7 @@ func (s *levelsController) runCompactDef(id, l int, cd compactDef) (err error) {
 	}
 	defer func() {
 		// Only assign to err, if it's not already nil.
-		if decErr := decr(); err == nil {
+		if decErr := decr(); err == nil { // -1
 			err = decErr
 		}
 	}()

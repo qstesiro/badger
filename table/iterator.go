@@ -434,6 +434,7 @@ var (
 
 // ConcatIterator concatenates the sequences defined by several iterators.  (It only works with
 // TableIterators, probably just because it's faster to not be so generic.)
+// 实现y.Iterator接口
 type ConcatIterator struct {
 	idx     int // Which iterator is active now.
 	cur     *Iterator
