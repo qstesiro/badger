@@ -653,20 +653,20 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 	// Pick a discard ts, so we can discard versions below this ts. We should
 	// never discard any versions starting from above this timestamp, because
 	// that would affect the snapshot view guarantee provided by transactions.
-	discardTs := s.kv.orc.discardAtOrBelow()
+	discardTs := s.kv.orc.discardAtOrBelow() // 丢弃version<=discardTs的数据
 
 	// Try to collect stats so that we can inform value log about GC. That would help us find which
 	// value log file should be GCed.
-	discardStats := make(map[uint32]int64)
+	discardStats := make(map[uint32]int64) // map[文件id]失效数据大小
 	updateStats := func(vs y.ValueStruct) {
 		// We don't need to store/update discard stats when badger is running in Disk-less mode.
 		if s.kv.opt.InMemory {
 			return
 		}
-		if vs.Meta&bitValuePointer > 0 {
+		if vs.Meta&bitValuePointer > 0 { // value存储在vlog文件中
 			var vp valuePointer
 			vp.Decode(vs.Value)
-			discardStats[vp.Fid] += int64(vp.Len)
+			discardStats[vp.Fid] += int64(vp.Len) // 增加vlog失效数据大小
 		}
 	}
 
@@ -679,11 +679,11 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 			return false
 		}
 		n2nl := s.levels[n2n]
-		n2nl.RLock()
-		defer n2nl.RUnlock()
+		n2nl.RLock()         // +锁
+		defer n2nl.RUnlock() // -锁
 
 		l, r := n2nl.overlappingTables(levelHandlerRLocked{}, kr)
-		return r-l >= 10
+		return r-l >= 10 // 超过10个表有重叠
 	}
 
 	var (
@@ -709,12 +709,12 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 
 			// See if we need to skip this key.
 			if len(skipKey) > 0 {
-				if y.SameKey(it.Key(), skipKey) {
+				if y.SameKey(it.Key(), skipKey) { // 忽略version
 					numSkips++
 					updateStats(it.Value())
 					continue
 				} else {
-					skipKey = skipKey[:0]
+					skipKey = skipKey[:0] // 切换新key,之前的skipkey失效需要重新设置
 				}
 			}
 
@@ -747,11 +747,12 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 					if exceedsAllowedOverlap(tableKr) {
 						// s.kv.opt.Debugf("L%d -> L%d Breaking due to exceedsAllowedOverlap with
 						// kr: %s\n", cd.thisLevel.level, cd.nextLevel.level, tableKr)
-						break
+						break // 结束当前区间
 					}
 				}
 			}
 
+			// key相同情况执行以下部分
 			vs := it.Value()
 			version := y.ParseTs(it.Key())
 
@@ -779,18 +780,21 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 					switch {
 					// Add the key to the table only if it has not expired.
 					// We don't want to add the deleted/expired keys.
-					case !isExpired && lastValidVersion:
+					case !isExpired && lastValidVersion: // 未超期但是最后有效版本
 						// Add this key. We have set skipKey, so the following key versions
 						// would be skipped.
-					case hasOverlap:
+						// 需要写入当前key但是跳过后续相关key
+					case hasOverlap: // 超时且有重叠(isExpired && hasOverlap)
 						// If this key range has overlap with lower levels, then keep the deletion
 						// marker with the latest version, discarding the rest. We have set skipKey,
 						// so the following key versions would be skipped.
-					default:
+						// 与>nextLevel的层数据有重叠
+						// 需要写入当前key但是跳过后续相关key,具体使用不明 ???
+					default: // 超期且无重叠(isExpired && !hasOverlap)
 						// If no overlap, we can skip all the versions, by continuing here.
 						numSkips++
 						updateStats(vs)
-						continue // Skip adding this key.
+						continue // Skip adding this key. 直接跳过当前且跳过后续相同key
 					}
 				}
 			}
@@ -801,11 +805,13 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 			}
 			switch {
 			case firstKeyHasDiscardSet:
+				// version > discardTs || vs.Meta&bitMergeEntry == 1
 				// This key is same as the last key which had "DiscardEarlierVersions" set. The
 				// the next compactions will drop this key if its ts >
 				// discardTs (of the next compaction).
 				builder.AddStaleKey(it.Key(), vs, vp.Len)
 			case isExpired:
+				// version > discardTs || vs.Meta&bitMergeEntry == 1
 				// If the key is expired, the next compaction will drop it if
 				// its ts > discardTs (of the next compaction).
 				builder.AddStaleKey(it.Key(), vs, vp.Len)
