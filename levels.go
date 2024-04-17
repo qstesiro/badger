@@ -648,12 +648,14 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 
 	// Check overlap of the top level with the levels which are not being
 	// compacted in this compaction.
+	// 所有当前参与压实操作的表(top,bot)的key范围与[nextLevel+1,Lmax]表的key范围
+	// 进行逐层(升序)判定是否有重叠,只要有某一层有重叠就返回true
 	hasOverlap := s.checkOverlap(cd.allTables(), cd.nextLevel.level+1)
 
 	// Pick a discard ts, so we can discard versions below this ts. We should
 	// never discard any versions starting from above this timestamp, because
 	// that would affect the snapshot view guarantee provided by transactions.
-	discardTs := s.kv.orc.discardAtOrBelow() // 丢弃version<=discardTs的数据
+	discardTs := s.kv.orc.discardAtOrBelow() // 丢弃version<=discardTs的数据 ~~~
 
 	// Try to collect stats so that we can inform value log about GC. That would help us find which
 	// value log file should be GCed.
@@ -718,12 +720,12 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 				}
 			}
 
-			if !y.SameKey(it.Key(), lastKey) { // 切换新key
+			if !y.SameKey(it.Key(), lastKey) { // 切换新key,后续相同key不执行此部分
 				firstKeyHasDiscardSet = false
-				if len(kr.right) > 0 && y.CompareKeys(it.Key(), kr.right) >= 0 { // [left,right)
+				if len(kr.right) > 0 && y.CompareKeys(it.Key(), kr.right) >= 0 { // 到达右边界[left,right)
 					break // 结束当前区间
 				}
-				if builder.ReachedCapacity() {
+				if builder.ReachedCapacity() { // 到达容量边界
 					// Only break if we are on a different key, and have reached capacity. We want
 					// to ensure that all versions of the key are stored in the same sstable, and
 					// not divided across multiple tables at the same level.
@@ -752,7 +754,6 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 				}
 			}
 
-			// key相同情况执行以下部分
 			vs := it.Value()
 			version := y.ParseTs(it.Key())
 
@@ -769,6 +770,11 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 				// - The `discardEarlierVersions` bit is set OR
 				// - We've already processed `NumVersionsToKeep` number of versions
 				// (including the current item being processed)
+				// - bitDiscardEarlierVersions设置记录当前版本,后续版本丢弃
+				// - bitDiscardEarlierVersions未设置且numVersions<=NumVersionsToKeep则记录这些版本,后续版本丢弃
+				//   - numVersions<NumVersionsToKeep,lastValidVersion=false,所以skipKey不会被设置,直接记录
+				//   - numVersions==NumVersionsToKeep,lastValidVersion=true,所以skipKey会被设置,当前版本被记录,但后续版本被丢弃
+				// (vs.Meta&bitDiscardEarlierVersions > 0) === (numVersions == s.kv.opt.NumVersionsToKeep == 1)
 				lastValidVersion := vs.Meta&bitDiscardEarlierVersions > 0 ||
 					numVersions == s.kv.opt.NumVersionsToKeep
 
@@ -780,17 +786,17 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 					switch {
 					// Add the key to the table only if it has not expired.
 					// We don't want to add the deleted/expired keys.
-					case !isExpired && lastValidVersion: // 未超期但是最后有效版本
+					case !isExpired && lastValidVersion: // 未超期(删除)但是最新版本
 						// Add this key. We have set skipKey, so the following key versions
 						// would be skipped.
-						// 需要写入当前key但是跳过后续相关key
-					case hasOverlap: // 超时且有重叠(isExpired && hasOverlap)
+						// 未超期(删除)且当前版本为最后有效版本记录,后续所有版本被丢弃
+					case hasOverlap: // 已超期(删除)且有重叠(isExpired && hasOverlap)
 						// If this key range has overlap with lower levels, then keep the deletion
 						// marker with the latest version, discarding the rest. We have set skipKey,
 						// so the following key versions would be skipped.
-						// 与>nextLevel的层数据有重叠
-						// 需要写入当前key但是跳过后续相关key,具体使用不明 ???
-					default: // 超期且无重叠(isExpired && !hasOverlap)
+						// 已经超期(删除)但是与>nextLevel某层中数据有重叠记录此版本,后续所有版本被丢弃
+						// 为了能够将key的超时(删除)信息传递到下层相关的key上,因为旧的key可能不包含超时或删除信息
+					default: // 未超期(删除)且无重叠(isExpired && !hasOverlap)
 						// If no overlap, we can skip all the versions, by continuing here.
 						numSkips++
 						updateStats(vs)
@@ -803,19 +809,24 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 			if vs.Meta&bitValuePointer > 0 {
 				vp.Decode(vs.Value)
 			}
+
+			// (version > discardTs || vs.Meta&bitMergeEntry == 1), 记录所有
+			// (version <= discardTs && vs.Meta&bitMergeEntry == 0) && (!isExpired && numVersions <= s.kv.opt.NumbVersionsToKeep), 只记录前n条
+			// (version <= discardTs && vs.Meta&bitMergeEntry == 0) && (isExpired && hasOverlap), 只记录第一条
 			switch {
 			case firstKeyHasDiscardSet:
-				// version > discardTs || vs.Meta&bitMergeEntry == 1
-				// This key is same as the last key which had "DiscardEarlierVersions" set. The
-				// the next compactions will drop this key if its ts >
-				// discardTs (of the next compaction).
+				// This key is same as the last key which had "DiscardEarlierVersions" set.
+				// The the next compactions will drop this key if
+				// its ts > discardTs (of the next compaction).
+				// version <= discardTs && !isExpired 只保留最新的版本
 				builder.AddStaleKey(it.Key(), vs, vp.Len)
 			case isExpired:
-				// version > discardTs || vs.Meta&bitMergeEntry == 1
 				// If the key is expired, the next compaction will drop it if
 				// its ts > discardTs (of the next compaction).
+				// version <= discardTs && (isExpired && hasOverlap) 只保留第一条
 				builder.AddStaleKey(it.Key(), vs, vp.Len)
 			default:
+				// version <= discardTs && numVersions <= s.kv.opt.NumbVersionsToKeep 保留最近的n个版本
 				builder.Add(it.Key(), vs, vp.Len)
 			}
 		}
@@ -1707,7 +1718,7 @@ type TableInfo struct {
 }
 
 func (s *levelsController) getTableInfo() (result []TableInfo) {
-	for _, l := range s.levels {
+	for _, l := range s.levels { // 二维转一维
 		l.RLock()
 		for _, t := range l.tables {
 			info := TableInfo{
@@ -1727,7 +1738,7 @@ func (s *levelsController) getTableInfo() (result []TableInfo) {
 		}
 		l.RUnlock()
 	}
-	sort.Slice(result, func(i, j int) bool {
+	sort.Slice(result, func(i, j int) bool { // 按级别(升级)同级按id(升序)
 		if result[i].Level != result[j].Level {
 			return result[i].Level < result[j].Level
 		}
