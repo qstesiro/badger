@@ -927,7 +927,7 @@ func (s *levelsController) compactBuildTables(
 		var iters []y.Iterator
 		switch { // 添加top
 		case lev == 0: // L0层topTables可能是多个表
-			iters = appendIteratorsReversed(iters, topTables, table.NOCACHE)
+			iters = appendIteratorsReversed(iters, topTables, table.NOCACHE) // 保证表处理顺序由新到旧
 		case len(topTables) > 0: // Lx层topTables只能是一个表
 			y.AssertTrue(len(topTables) == 1)
 			iters = []y.Iterator{topTables[0].NewIterator(table.NOCACHE)}
@@ -937,7 +937,7 @@ func (s *levelsController) compactBuildTables(
 	}
 
 	res := make(chan *table.Table, 3)
-	inflightBuilders := y.NewThrottle(8 + len(cd.splits))
+	inflightBuilders := y.NewThrottle(8 + len(cd.splits)) // +8 ???
 	for _, kr := range cd.splits {
 		// Initiate Do here so we can register the goroutines for buildTables too.
 		if err := inflightBuilders.Do(); err != nil { // +do
@@ -946,6 +946,7 @@ func (s *levelsController) compactBuildTables(
 		}
 		go func(kr keyRange) {
 			defer inflightBuilders.Done(nil) // -done
+			// MergeIterator必须保证相同key的迭代顺序是从新到旧(降序)
 			it := table.NewMergeIterator(newIterator(), false)
 			defer it.Close()
 			s.subcompact(it, kr, cd, inflightBuilders, res)
@@ -1160,11 +1161,11 @@ func (s *levelsController) fillTablesL0ToL0(cd *compactDef) bool {
 	// acquiring the lock.
 	y.AssertTrue(cd.thisLevel.level == 0)
 	y.AssertTrue(cd.nextLevel.level == 0)
-	s.levels[0].RLock()
-	defer s.levels[0].RUnlock()
+	s.levels[0].RLock()         // +锁
+	defer s.levels[0].RUnlock() // -锁
 
-	s.cstatus.Lock()
-	defer s.cstatus.Unlock()
+	s.cstatus.Lock()         // +锁
+	defer s.cstatus.Unlock() // -锁
 
 	top := cd.thisLevel.tables
 	var out []*table.Table
