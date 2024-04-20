@@ -209,7 +209,7 @@ func (s *Skiplist) findNear(key []byte, less bool, allowEqual bool) (*node, bool
 		}
 
 		nextKey := next.key(s.arena)
-		cmp := y.CompareKeys(key, nextKey)
+		cmp := y.CompareKeys(key, nextKey) // 首先比较key,相同再比较version
 		if cmp > 0 {
 			// x.key < next.key < key. We can continue to move right.
 			x = next

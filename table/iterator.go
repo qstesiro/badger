@@ -454,6 +454,7 @@ func NewConcatIterator(tbls []*Table, opt int) *ConcatIterator {
 
 		// Save cycles by not initializing the iterators until needed.
 		// iters[i] = tbls[i].NewIterator(reversed)
+		// iters惰性初始化
 	}
 	return &ConcatIterator{
 		options: opt,

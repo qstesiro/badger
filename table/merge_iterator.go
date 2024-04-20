@@ -22,27 +22,19 @@ import (
 	"github.com/dgraph-io/badger/v4/y"
 )
 
-// MergeIterator merges multiple iterators.
-// NOTE: MergeIterator owns the array of iterators and is responsible for closing them.
-// 实现y.Iterator接口
-type MergeIterator struct {
-	left  node
-	right node
-	small *node
-
-	curKey  []byte
-	reverse bool
-}
-
 type node struct {
+	// MergeIterator.small使用
 	valid bool
-	key   []byte
-	iter  y.Iterator // Iterator,ConcatIterator,MergeIterator
+	key   []byte // 当前key
+
+	// MergeIterator.small(left,right)使用
+	iter y.Iterator // Iterator,ConcatIterator,MergeIterator
 
 	// The two iterators are type asserted from `y.Iterator`, used to inline more function calls.
 	// Calling functions on concrete types is much faster (about 25-30%) than calling the
 	// interface's function.
-	// 这个性能优化第一次遇到,是个新思路 !!!
+	// 此类性能优化第一次遇到,是个新思路 !!!
+	// MergeIterator.left(right)使用
 	merge  *MergeIterator
 	concat *ConcatIterator
 }
@@ -55,12 +47,14 @@ func (n *node) setIterator(iter y.Iterator) {
 	n.iter = iter
 	// It's okay if the type assertion below fails and n.merge/n.concat are set to nil.
 	// We handle the nil values of merge and concat in all the methods.
-	n.merge, _ = iter.(*MergeIterator)   // 类型可能不匹配, 后续使用需要注意判nil
-	n.concat, _ = iter.(*ConcatIterator) // 类型可能不匹配, 后续使用需要注意判nil
+	// 类型可能不匹配, 后续使用需要注意判nil
+	n.merge, _ = iter.(*MergeIterator)
+	n.concat, _ = iter.(*ConcatIterator)
 }
 
+// 设置valid,key字段
 func (n *node) setKey() {
-	switch {
+	switch { // 等价于n.iter.Key()
 	case n.merge != nil:
 		n.valid = n.merge.small.valid
 		if n.valid {
@@ -80,7 +74,7 @@ func (n *node) setKey() {
 }
 
 func (n *node) next() {
-	switch {
+	switch { // 等价于n.iter.Next()
 	case n.merge != nil:
 		n.merge.Next()
 	case n.concat != nil:
@@ -101,6 +95,54 @@ func (n *node) seek(key []byte) {
 	n.setKey()
 }
 
+// MergeIterator merges multiple iterators.
+// NOTE: MergeIterator owns the array of iterators and is responsible for closing them.
+// 实现y.Iterator接口
+type MergeIterator struct {
+	left  node
+	right node
+
+	small  *node
+	curKey []byte
+
+	reverse bool
+}
+
+// NewMergeIterator creates a merge iterator.
+func NewMergeIterator(iters []y.Iterator, reverse bool) y.Iterator {
+	switch len(iters) {
+	case 0:
+		return nil
+	case 1:
+		return iters[0]
+	case 2:
+		mi := &MergeIterator{
+			reverse: reverse,
+		}
+		mi.left.setIterator(iters[0])
+		mi.right.setIterator(iters[1])
+		// Assign left iterator randomly. This will be fixed when user calls rewind/seek.
+		mi.small = &mi.left
+		return mi
+	}
+	mid := len(iters) / 2
+	return NewMergeIterator(
+		[]y.Iterator{
+			NewMergeIterator(iters[:mid], reverse),
+			NewMergeIterator(iters[mid:], reverse),
+		}, reverse)
+}
+
+// Close implements y.Iterator.
+func (mi *MergeIterator) Close() error {
+	err1 := mi.left.iter.Close()
+	err2 := mi.right.iter.Close()
+	if err1 != nil {
+		return y.Wrap(err1, "MergeIterator")
+	}
+	return y.Wrap(err2, "MergeIterator")
+}
+
 func (mi *MergeIterator) fix() {
 	if !mi.bigger().valid {
 		return
@@ -109,7 +151,7 @@ func (mi *MergeIterator) fix() {
 		mi.swapSmall()
 		return
 	}
-	cmp := y.CompareKeys(mi.small.key, mi.bigger().key)
+	cmp := y.CompareKeys(mi.small.key, mi.bigger().key) // 首先比较key,相同再比较version
 	switch {
 	case cmp == 0: // Both the keys are equal.
 		// In case of same keys, move the right iterator ahead.
@@ -157,8 +199,8 @@ func (mi *MergeIterator) swapSmall() {
 // Next returns the next element. If it is the same as the current key, ignore it.
 func (mi *MergeIterator) Next() {
 	for mi.Valid() {
-		if !bytes.Equal(mi.small.key, mi.curKey) {
-			break
+		if !bytes.Equal(mi.small.key, mi.curKey) { // 包含version比较
+			break // key不同相当于找到next
 		}
 		mi.small.next()
 		mi.fix()
@@ -199,39 +241,4 @@ func (mi *MergeIterator) Key() []byte {
 // Value returns the value associated with the iterator.
 func (mi *MergeIterator) Value() y.ValueStruct {
 	return mi.small.iter.Value()
-}
-
-// Close implements y.Iterator.
-func (mi *MergeIterator) Close() error {
-	err1 := mi.left.iter.Close()
-	err2 := mi.right.iter.Close()
-	if err1 != nil {
-		return y.Wrap(err1, "MergeIterator")
-	}
-	return y.Wrap(err2, "MergeIterator")
-}
-
-// NewMergeIterator creates a merge iterator.
-func NewMergeIterator(iters []y.Iterator, reverse bool) y.Iterator {
-	switch len(iters) {
-	case 0:
-		return nil
-	case 1:
-		return iters[0]
-	case 2:
-		mi := &MergeIterator{
-			reverse: reverse,
-		}
-		mi.left.setIterator(iters[0])
-		mi.right.setIterator(iters[1])
-		// Assign left iterator randomly. This will be fixed when user calls rewind/seek.
-		mi.small = &mi.left
-		return mi
-	}
-	mid := len(iters) / 2
-	return NewMergeIterator(
-		[]y.Iterator{
-			NewMergeIterator(iters[:mid], reverse),
-			NewMergeIterator(iters[mid:], reverse),
-		}, reverse)
 }
