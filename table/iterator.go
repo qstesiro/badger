@@ -173,6 +173,7 @@ func (itr *blockIterator) prev() {
 }
 
 // Iterator is an iterator for a Table.
+// 实现y.Iterator接口
 type Iterator struct {
 	t    *Table
 	bpos int
@@ -449,7 +450,7 @@ func NewConcatIterator(tbls []*Table, opt int) *ConcatIterator {
 	for i := 0; i < len(tbls); i++ {
 		// Increment the reference count. Since, we're not creating the iterator right now.
 		// Here, We'll hold the reference of the tables, till the lifecycle of the iterator.
-		tbls[i].IncrRef()
+		tbls[i].IncrRef() // +1
 
 		// Save cycles by not initializing the iterators until needed.
 		// iters[i] = tbls[i].NewIterator(reversed)
@@ -553,7 +554,7 @@ func (s *ConcatIterator) Next() {
 func (s *ConcatIterator) Close() error {
 	for _, t := range s.tables {
 		// DeReference the tables while closing the iterator.
-		if err := t.DecrRef(); err != nil {
+		if err := t.DecrRef(); err != nil { // -1
 			return err
 		}
 	}

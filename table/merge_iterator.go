@@ -24,6 +24,7 @@ import (
 
 // MergeIterator merges multiple iterators.
 // NOTE: MergeIterator owns the array of iterators and is responsible for closing them.
+// 实现y.Iterator接口
 type MergeIterator struct {
 	left  node
 	right node
@@ -36,21 +37,26 @@ type MergeIterator struct {
 type node struct {
 	valid bool
 	key   []byte
-	iter  y.Iterator
+	iter  y.Iterator // Iterator,ConcatIterator,MergeIterator
 
 	// The two iterators are type asserted from `y.Iterator`, used to inline more function calls.
 	// Calling functions on concrete types is much faster (about 25-30%) than calling the
 	// interface's function.
+	// 这个性能优化第一次遇到,是个新思路 !!!
 	merge  *MergeIterator
 	concat *ConcatIterator
 }
 
+// iter可能三种类型
+// - Iterator
+// - ConcatIterator
+// - MergeIterator
 func (n *node) setIterator(iter y.Iterator) {
 	n.iter = iter
 	// It's okay if the type assertion below fails and n.merge/n.concat are set to nil.
 	// We handle the nil values of merge and concat in all the methods.
-	n.merge, _ = iter.(*MergeIterator)
-	n.concat, _ = iter.(*ConcatIterator)
+	n.merge, _ = iter.(*MergeIterator)   // 类型可能不匹配, 后续使用需要注意判nil
+	n.concat, _ = iter.(*ConcatIterator) // 类型可能不匹配, 后续使用需要注意判nil
 }
 
 func (n *node) setKey() {

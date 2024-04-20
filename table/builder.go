@@ -247,11 +247,11 @@ func (b *Builder) addHelper(key []byte, v y.ValueStruct, vpLen uint32) {
 	b.curBlock.entryOffsets = append(b.curBlock.entryOffsets, uint32(b.curBlock.end)) // 每次allocate会增长end
 
 	// Layout: header, diffKey, value.
-	b.append(h.Encode())
-	b.append(diffKey)
-
+	b.append(h.Encode()) // header
+	b.append(diffKey)    // diffKey
+	// value
 	dst := b.allocate(int(v.EncodedSize()))
-	v.Encode(dst)
+	v.Encode(dst) // Layout: meta, userMeta, expireAt, value
 
 	// Add the vpLen to the onDisk size. We'll add the size of the block to
 	// onDisk size in Finish() function.

@@ -401,7 +401,7 @@ func (s *Skiplist) Get(key []byte) y.ValueStruct {
 
 // NewIterator returns a skiplist iterator.  You have to Close() the iterator.
 func (s *Skiplist) NewIterator() *Iterator {
-	s.IncrRef()
+	s.IncrRef() // +1
 	return &Iterator{list: s}
 }
 
@@ -418,7 +418,7 @@ type Iterator struct {
 
 // Close frees the resources held by the iterator
 func (s *Iterator) Close() error {
-	s.list.DecrRef()
+	s.list.DecrRef() // -1
 	return nil
 }
 
