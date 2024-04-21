@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+	"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+<title>badger.html</title>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8"/>
+
+</head>
+
+<body>
+
+<h1 id="issues">ISSUES</h1>
+<h2 id="vlog">vlog</h2>
+<ul>
+<li>写mmap不需要同步 — ok</li>
+<li>vlogThreshold大小[通过metric动态计算]</li>
+<li>vlogThreshold变更时机</li>
+</ul>
+<h2 id="memtable">memtable</h2>
+<ul>
+<li>request结构定义</li>
+<li>skiplist
+<ul>
+<li>skiplistIterator</li>
+<li>arena</li>
+<li>randomHeight</li>
+<li>skiplist表中key的格式</li>
+<li>memTable.maxVersion</li>
+<li>写入skiplist并发流程</li>
+</ul></li>
+</ul>
+<h2 id="sstable">sstable</h2>
+<ul>
+<li>builder
+<ul>
+<li>sstable entry format</li>
+<li>sstable index format</li>
+<li>flushMemTable (SSTable)</li>
+<li>table
+<ul>
+<li>OpenTable逻辑</li>
+<li>分析blockIterator</li>
+<li>分析表Iterator</li>
+<li>分析ConcatIterator — ok</li>
+<li>分析MergeIterator — ok</li>
+<li>table.block函数</li>
+<li>table,block引用计数</li>
+</ul></li>
+</ul></li>
+</ul>
+<h2 id="compaction">compaction</h2>
+<ul>
+<li>levelsController
+<ul>
+<li>newLevelsController</li>
+<li>startCompact</li>
+<li>doCompact
+<ul>
+<li>fillTablesL0
+<ul>
+<li>fillTablesL0ToLbase</li>
+<li>fillTablesL0ToL0</li>
+<li>分析为什么增加L0-&gt;L0层压实功能逻辑</li>
+<li>分析L0-&gt;LBase的触发情况以及L0-&gt;L0的触发情况</li>
+</ul></li>
+<li>fillTables</li>
+</ul></li>
+<li>runCompactDef
+<ul>
+<li>split键范围并行压实
+<ul>
+<li>split键范围操作结果中丢失的右边界在压实中如何处理</li>
+</ul></li>
+<li>压实操作中创建新表,删除旧表并没有同步修改manifest</li>
+<li>compactBuildTables函数逻辑
+<ul>
+<li>分析subcompact函数逻辑
+<ul>
+<li>分析updateStats</li>
+<li>分析exceedsAllowedOverlap</li>
+<li>分析addKeys
+<ul>
+<li>firstKeyHasDiscardSet</li>
+<li>isExpired</li>
+</ul></li>
+</ul></li>
+</ul></li>
+</ul></li>
+<li>pickCompactLevels</li>
+<li>levelTargets</li>
+<li>add sst</li>
+<li>levelHandler</li>
+<li>compactStatus
+<ul>
+<li>levelCompactStatus
+<ul>
+<li>keyRange</li>
+</ul></li>
+</ul></li>
+</ul></li>
+<li>levelHandler — ok</li>
+<li>draw compact flow — ok</li>
+</ul>
+<h2 id="manifest">manifest</h2>
+<ul>
+<li>init</li>
+<li>format</li>
+<li>compressionType[snappy/ZSTD]</li>
+<li>draw format</li>
+</ul>
+<h2 id="gc">GC</h2>
+<ul>
+<li>gc触发</li>
+<li>gc流程</li>
+<li>discardStats</li>
+<li>discardStats结构与使用</li>
+<li>discard比例</li>
+</ul>
+<h2 id="tnx">tnx</h2>
+<ul>
+<li>事务处理逻辑</li>
+</ul>
+<h2 id="encrypt">encrypt</h2>
+<ul>
+<li>keyregistry</li>
+</ul>
+
+</body>
+</html>

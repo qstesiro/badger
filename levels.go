@@ -865,7 +865,7 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 			// Can't return from here, until I decrRef all the tables that I built so far.
 			break
 		}
-		go func(builder *table.Builder, fileID uint64) {
+		go func(builder *table.Builder, fileID uint64) { // 异步处理落盘
 			var err error
 			defer inflightBuilders.Done(err) // -done
 			defer builder.Close()

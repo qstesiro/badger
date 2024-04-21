@@ -143,8 +143,9 @@ func (mi *MergeIterator) Close() error {
 	return y.Wrap(err2, "MergeIterator")
 }
 
+// 函数作用就是不断调整small指向当前较小key的iter
 func (mi *MergeIterator) fix() {
-	if !mi.bigger().valid {
+	if !mi.bigger().valid { // 已经超出表对应的范围
 		return
 	}
 	if !mi.small.valid {
@@ -196,7 +197,7 @@ func (mi *MergeIterator) swapSmall() {
 	}
 }
 
-// Next returns the next element. If it is the same as the current key, ignore it.
+// Next returns the next element. If it is the same as the current key, ignore it. 键完全相同跳过 ???
 func (mi *MergeIterator) Next() {
 	for mi.Valid() {
 		if !bytes.Equal(mi.small.key, mi.curKey) { // 包含version比较
