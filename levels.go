@@ -722,7 +722,7 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 
 			if !y.SameKey(it.Key(), lastKey) { // 切换新key,后续相同key不执行此部分
 				firstKeyHasDiscardSet = false
-				if len(kr.right) > 0 && y.CompareKeys(it.Key(), kr.right) >= 0 { // 到达右边界[left,right)
+				if len(kr.right) > 0 && y.CompareKeys(it.Key(), kr.right) >= 0 { // 半开区间 [left,right)
 					break // 结束当前区间
 				}
 				if builder.ReachedCapacity() { // 到达容量边界
@@ -840,7 +840,7 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 		it.Rewind()
 	}
 	for it.Valid() {
-		if len(kr.right) > 0 && y.CompareKeys(it.Key(), kr.right) >= 0 {
+		if len(kr.right) > 0 && y.CompareKeys(it.Key(), kr.right) >= 0 { // 半开区间 [left,right)
 			break
 		}
 
@@ -865,7 +865,7 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 			// Can't return from here, until I decrRef all the tables that I built so far.
 			break
 		}
-		go func(builder *table.Builder, fileID uint64) { // 异步处理落盘
+		go func(builder *table.Builder, fileID uint64) { // 异步处理落盘(保证文件id顺序)
 			var err error
 			defer inflightBuilders.Done(err) // -done
 			defer builder.Close()
@@ -1090,7 +1090,7 @@ func (s *levelsController) addSplits(cd *compactDef) {
 		width = 3
 	}
 	skr := cd.thisRange
-	skr.extend(cd.nextRange)
+	skr.extend(cd.nextRange) // 合并所有key范围
 
 	addRange := func(right []byte) {
 		skr.right = y.Copy(right)
@@ -1103,7 +1103,7 @@ func (s *levelsController) addSplits(cd *compactDef) {
 		// last entry in bottom table.
 		if i == len(cd.bot)-1 {
 			addRange([]byte{})
-			// splits=[left1,right1)[left2,right2)...[leftn,{}) (leftX=rightX-1, X>1)
+			// splits=[left0,right0)[left1,right1)...[leftn,{}) (当X>0, leftX=rightX-1)
 			// 最后的右边界没有保存 ???
 			return
 		}
@@ -1114,7 +1114,7 @@ func (s *levelsController) addSplits(cd *compactDef) {
 			// Top table is [A1...C3(deleted)]
 			// bot table is [B1....C2]
 			// It will generate a split [A1 ... C0], including any records of Key C.
-			right := y.KeyWithTs(y.ParseKey(t.Biggest()), 0) // version = MaxUint64(key相同的情况下,version更大)
+			right := y.KeyWithTs(y.ParseKey(t.Biggest()), 0) // 0代表版本最旧
 			addRange(right)
 		}
 	}
