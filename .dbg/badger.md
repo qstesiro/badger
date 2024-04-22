@@ -74,8 +74,10 @@
 
 ## GC
 
-- gc触发
+- gc触发(RunValueLogGC)
 - gc流程
+  - pickLog
+  - doRunGC
 - discardStats
 - discardStats结构与使用
 - discard比例

@@ -1003,8 +1003,8 @@ func (vlog *valueLog) readValueBytes(vp valuePointer) ([]byte, *logFile, error) 
 }
 
 func (vlog *valueLog) pickLog(discardRatio float64) *logFile {
-	vlog.filesLock.RLock()
-	defer vlog.filesLock.RUnlock()
+	vlog.filesLock.RLock()         // +锁
+	defer vlog.filesLock.RUnlock() // -锁
 
 LOOP:
 	// Pick a candidate that contains the largest amount of discardable data

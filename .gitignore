@@ -3,3 +3,5 @@ badger-test*/
 .idea/
 
 vendor
+
+.dbg/badger.html
