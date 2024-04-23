@@ -109,8 +109,8 @@ func (lf *discardStats) maxSlot() int {
 // discard > 0 且存在对应slot则增加值,无对应slot则增加slot并设置值
 func (lf *discardStats) Update(fidu uint32, discard int64) int64 {
 	fid := uint64(fidu)
-	lf.Lock()
-	defer lf.Unlock()
+	lf.Lock()         // +锁
+	defer lf.Unlock() // -锁
 
 	idx := sort.Search(lf.nextEmptySlot, func(slot int) bool {
 		return lf.get(slot*16) >= fid
@@ -158,8 +158,8 @@ func (lf *discardStats) Iterate(f func(fid, stats uint64)) {
 
 // MaxDiscard returns the file id with maximum discard bytes.
 func (lf *discardStats) MaxDiscard() (uint32, int64) {
-	lf.Lock()
-	defer lf.Unlock()
+	lf.Lock()         // +锁
+	defer lf.Unlock() // -锁
 
 	var maxFid, maxVal uint64
 	lf.Iterate(func(fid, val uint64) {

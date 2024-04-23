@@ -170,16 +170,16 @@ func (r *safeRead) Entry(reader io.Reader) (*Entry, error) {
 }
 
 func (vlog *valueLog) rewrite(f *logFile) error {
-	vlog.filesLock.RLock()
+	vlog.filesLock.RLock() // +锁
 	for _, fid := range vlog.filesToBeDeleted {
 		if fid == f.fid {
-			vlog.filesLock.RUnlock()
+			vlog.filesLock.RUnlock() // -锁
 			return errors.Errorf("value log file already marked for deletion fid: %d", fid)
 		}
 	}
 	maxFid := vlog.maxFid
 	y.AssertTruef(f.fid < maxFid, "fid to move: %d. Current max fid: %d", f.fid, maxFid)
-	vlog.filesLock.RUnlock()
+	vlog.filesLock.RUnlock() // -锁
 
 	vlog.opt.Infof("Rewriting fid: %d", f.fid)
 	wb := make([]*Entry, 0, 1000)
@@ -188,16 +188,16 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 	y.AssertTrue(vlog.db != nil)
 	var count, moved int
 	fe := func(e Entry) error {
-		count++
+		count++ // 已经处理entry个数
 		if count%100000 == 0 {
 			vlog.opt.Debugf("Processing entry %d", count)
 		}
 
-		vs, err := vlog.db.get(e.Key)
+		vs, err := vlog.db.get(e.Key) // 查询
 		if err != nil {
 			return err
 		}
-		if discardEntry(e, vs, vlog.db) {
+		if discardEntry(e, vs, vlog.db) { // 丢弃
 			return nil
 		}
 
@@ -249,7 +249,7 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 			}
 			wb = append(wb, ne)
 			size += es
-		} else { //nolint:staticcheck
+		} else { //nolint:staticcheck (vp.Fid < f.fid && vp.Offset < f.Offset)
 			// It might be possible that the entry read from LSM Tree points to
 			// an older vlog file.  This can happen in the following situation.
 			// Assume DB is opened with
@@ -339,10 +339,10 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 	var deleteFileNow bool
 	// Entries written to LSM. Remove the older file now.
 	{
-		vlog.filesLock.Lock()
+		vlog.filesLock.Lock() // +锁
 		// Just a sanity-check.
 		if _, ok := vlog.filesMap[f.fid]; !ok {
-			vlog.filesLock.Unlock()
+			vlog.filesLock.Unlock() // -锁
 			return errors.Errorf("Unable to find fid: %d", f.fid)
 		}
 		if vlog.iteratorCount() == 0 {
@@ -351,7 +351,7 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 		} else {
 			vlog.filesToBeDeleted = append(vlog.filesToBeDeleted, f.fid)
 		}
-		vlog.filesLock.Unlock()
+		vlog.filesLock.Unlock() // -锁
 	}
 
 	if deleteFileNow {
@@ -1046,18 +1046,22 @@ LOOP:
 }
 
 func discardEntry(e Entry, vs y.ValueStruct, db *DB) bool {
+	// key相同但version不同的情况可以删除
 	if vs.Version != y.ParseTs(e.Key) {
 		// Version not found. Discard.
 		return true
 	}
+	// 虽然在压实过程中对于超时(已删除)的key可能会被保留
+	// (因为其下某层中还存在相同key,为了向其传递超时或已删除信息)
+	// 但是其对应的value不再需要所以对应的vlog可以删除
 	if isDeletedOrExpired(vs.Meta, vs.ExpiresAt) {
 		return true
 	}
-	if (vs.Meta & bitValuePointer) == 0 {
+	if (vs.Meta & bitValuePointer) == 0 { // ???
 		// Key also stores the value in LSM. Discard.
 		return true
 	}
-	if (vs.Meta & bitFinTxn) > 0 {
+	if (vs.Meta & bitFinTxn) > 0 { // ~~~
 		// Just a txn finish entry. Discard.
 		return true
 	}

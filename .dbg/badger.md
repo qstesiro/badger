@@ -32,6 +32,8 @@
     - table.block函数
     - table,block引用计数
 
+## query
+
 ## compaction
 
 - levelsController
@@ -55,6 +57,7 @@
         - 分析addKeys
           - firstKeyHasDiscardSet
           - isExpired
+   - dropPrefixes从哪里给出
   - pickCompactLevels
   - levelTargets
   - add sst
@@ -68,19 +71,20 @@
 ## manifest
 
 - init
-- format
-- compressionType[snappy/ZSTD]
-- draw format
+- format --- ok
+- compressionType[snappy/ZSTD] --- ok
+- draw format --- ok
 
 ## GC
 
-- gc触发(RunValueLogGC)
+- gc触发(RunValueLogGC) --- ok
 - gc流程
-  - pickLog
-  - doRunGC
-- discardStats
-- discardStats结构与使用
-- discard比例
+  - valueLog.pickLog
+  - valueLog.doRunGC
+  - valueLog.rewrite
+- discardStats --- ok
+  - discardStats结构 --- ok
+  - discard比例 --- ok
 
 ## tnx
 
