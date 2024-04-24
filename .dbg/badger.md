@@ -79,7 +79,7 @@
 
 - gc触发(RunValueLogGC) --- ok
 - gc流程
-  - valueLog.pickLog
+  - valueLog.pickLog --- ok
   - valueLog.doRunGC
   - valueLog.rewrite
 - discardStats --- ok

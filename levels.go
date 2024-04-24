@@ -937,7 +937,10 @@ func (s *levelsController) compactBuildTables(
 	}
 
 	res := make(chan *table.Table, 3)
-	inflightBuilders := y.NewThrottle(8 + len(cd.splits)) // +8 ???
+	// 可能启动的协程数是len(cd.splits)*2,但是为了控制协程数过大所以+8
+	// 如果len(cd.splits)<=8, 则最大协程数为len(cd.splits)*2
+	// 如果len(cd.splits)>8, 则最大协程数为len(cd.splits)+8
+	inflightBuilders := y.NewThrottle(8 + len(cd.splits))
 	for _, kr := range cd.splits {
 		// Initiate Do here so we can register the goroutines for buildTables too.
 		if err := inflightBuilders.Do(); err != nil { // +do

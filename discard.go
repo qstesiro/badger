@@ -35,10 +35,19 @@ type discardStats struct {
 
 	*z.MmapFile
 	opt           Options
-	nextEmptySlot int // 每个slot占16字节
+	nextEmptySlot int // 下一个slot的偏移,每个slot占16字节
 }
 
 const discardFname string = "DISCARD"
+
+// 文件格式(FID升序)
+// +----------------+---------+----------------+
+// |   entry(16B)   |   ...   |   entry(16B)   |
+// +----------------+---------+----------------+
+// 项格式
+// +-------------+--------------+
+// |   fid(8B)   |   size(8B)   |
+// +-------------+--------------+
 
 func InitDiscardStats(opt Options) (*discardStats, error) {
 	fname := filepath.Join(opt.ValueDir, discardFname)
@@ -57,7 +66,7 @@ func InitDiscardStats(opt Options) (*discardStats, error) {
 		return nil, y.Wrapf(err, "while opening file: %s\n", discardFname)
 	}
 
-	for slot := 0; slot < lf.maxSlot(); slot++ {
+	for slot := 0; slot < lf.maxSlot(); slot++ { // 初始化slot偏移
 		if lf.get(16*slot) == 0 { // 取槽的8个字节
 			lf.nextEmptySlot = slot
 			break
@@ -68,12 +77,17 @@ func InitDiscardStats(opt Options) (*discardStats, error) {
 	return lf, nil
 }
 
+// sort.Interface
 func (lf *discardStats) Len() int {
 	return lf.nextEmptySlot
 }
+
+// sort.Interface
 func (lf *discardStats) Less(i, j int) bool {
-	return lf.get(16*i) < lf.get(16*j)
+	return lf.get(16*i) < lf.get(16*j) // fid升序
 }
+
+// sort.Interface
 func (lf *discardStats) Swap(i, j int) {
 	left := lf.Data[16*i : 16*i+16]
 	right := lf.Data[16*j : 16*j+16]
@@ -116,7 +130,7 @@ func (lf *discardStats) Update(fidu uint32, discard int64) int64 {
 		return lf.get(slot*16) >= fid
 	})
 	if idx < lf.nextEmptySlot && lf.get(idx*16) == fid { // 找到对应的slot
-		off := idx*16 + 8
+		off := idx*16 + 8 // +8获取discard偏移
 		curDisc := lf.get(off)
 		if discard == 0 { // 代表查询当前值
 			return int64(curDisc)
@@ -133,15 +147,15 @@ func (lf *discardStats) Update(fidu uint32, discard int64) int64 {
 		return 0
 	}
 
-	// Could not find the fid. Add the entry. 没有找到对应的slot且discard>0所有需要增加新的slot
+	// Could not find the fid. Add the entry. 没有找到对应的slot且discard>0所以需要增加新的slot
 	idx = lf.nextEmptySlot
-	lf.set(idx*16, fid)
-	lf.set(idx*16+8, uint64(discard))
+	lf.set(idx*16, fid)               // 文件ID
+	lf.set(idx*16+8, uint64(discard)) // discard数据量
 
 	// Move to next slot.
 	lf.nextEmptySlot++
 	for lf.nextEmptySlot >= lf.maxSlot() { // 超过阈值
-		y.Check(lf.Truncate(2 * int64(len(lf.Data)))) // 自动扩容,截断操作会重新映射Data大小
+		y.Check(lf.Truncate(2 * int64(len(lf.Data)))) // 以2倍自动扩容,截断操作会重新映射Data大小
 	}
 	lf.zeroOut()
 
