@@ -188,8 +188,8 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 	y.AssertTrue(vlog.db != nil)
 	var count, moved int
 	fe := func(e Entry) error {
-		count++ // 已经处理entry个数
-		if count%100000 == 0 {
+		count++                // 已经处理entry个数
+		if count%100000 == 0 { // 每1w个打印输出
 			vlog.opt.Debugf("Processing entry %d", count)
 		}
 
@@ -209,19 +209,21 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 		vp.Decode(vs.Value)
 
 		// If the entry found from the LSM Tree points to a newer vlog file, don't do anything.
+		// 找到更新的版本,代表当前版本已经被删除了所以对应的value也要丢弃
 		if vp.Fid > f.fid {
-			return nil
+			return nil // 丢弃
 		}
 		// If the entry found from the LSM Tree points to an offset greater than the one
 		// read from vlog, don't do anything.
+		// 找到更新的版本,代表当前版本已经被删除了所以对应的value也要丢弃
 		if vp.Offset > e.offset {
-			return nil
+			return nil // 丢弃
 		}
 		// If the entry read from LSM Tree and vlog file point to the same vlog file and offset,
 		// insert them back into the DB.
 		// NOTE: It might be possible that the entry read from the LSM Tree points to
 		// an older vlog file. See the comments in the else part.
-		if vp.Fid == f.fid && vp.Offset == e.offset {
+		if vp.Fid == f.fid && vp.Offset == e.offset { // 精确匹配
 			moved++
 			// This new entry only contains the key, and a pointer to the value.
 			ne := new(Entry)
@@ -249,7 +251,11 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 			}
 			wb = append(wb, ne)
 			size += es
-		} else { //nolint:staticcheck (vp.Fid < f.fid && vp.Offset < f.Offset)
+		} else { //nolint:staticcheck
+			// 更旧的版本 (vp.Fid < f.fid && vp.Offset < f.Offset) ???
+			// 感觉像是历史遗留的代理现在应该不会执行到此分支内
+			// - numberOfVersionsToKeep些选项当前已经没有定义
+			// - 参考DB.get函数的注释说明
 			// It might be possible that the entry read from LSM Tree points to
 			// an older vlog file.  This can happen in the following situation.
 			// Assume DB is opened with
@@ -1051,20 +1057,31 @@ func discardEntry(e Entry, vs y.ValueStruct, db *DB) bool {
 		// Version not found. Discard.
 		return true
 	}
+
+	// 以下几种情况都是精确匹配
+
 	// 虽然在压实过程中对于超时(已删除)的key可能会被保留
 	// (因为其下某层中还存在相同key,为了向其传递超时或已删除信息)
 	// 但是其对应的value不再需要所以对应的vlog可以删除
 	if isDeletedOrExpired(vs.Meta, vs.ExpiresAt) {
 		return true
 	}
-	if (vs.Meta & bitValuePointer) == 0 { // ???
+
+	// 此情况只会由备份导致
+	// 在备份时使用了比原先更低的阈值
+	// 导致备份时数据导致备份数据被写到vlog中
+	// 而原来的数据还存储于lsm中
+	// 具体备份还需要进一步分析 // ???
+	if (vs.Meta & bitValuePointer) == 0 {
 		// Key also stores the value in LSM. Discard.
 		return true
 	}
+
 	if (vs.Meta & bitFinTxn) > 0 { // ~~~
 		// Just a txn finish entry. Discard.
 		return true
 	}
+
 	return false
 }
 

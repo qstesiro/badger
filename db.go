@@ -756,6 +756,8 @@ func (db *DB) getMemTables() ([]*memTable, func()) {
 // do that. For every get("fooX") call where X is the version, we will search
 // for "fooX" in all the levels of the LSM tree. This is expensive but it
 // removes the overhead of handling move keys completely.
+//
+// 首先精确匹配,否则返回最新版
 func (db *DB) get(key []byte) (y.ValueStruct, error) {
 	if db.IsClosed() {
 		return y.ValueStruct{}, ErrDBClosed

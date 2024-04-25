@@ -389,7 +389,7 @@ func (s *Skiplist) Get(key []byte) y.ValueStruct {
 	}
 
 	nextKey := s.arena.getKey(n.keyOffset, n.keySize)
-	if !y.SameKey(key, nextKey) {
+	if !y.SameKey(key, nextKey) { // version可以不同,key必须相同
 		return y.ValueStruct{}
 	}
 

@@ -162,8 +162,8 @@ func (o *oracle) hasConflict(txn *Txn) bool {
 }
 
 func (o *oracle) newCommitTs(txn *Txn) (uint64, bool) {
-	o.Lock()
-	defer o.Unlock()
+	o.Lock()         // +锁
+	defer o.Unlock() // -锁
 
 	if o.hasConflict(txn) {
 		return 0, true
@@ -360,7 +360,7 @@ func exceedsSize(prefix string, max int64, key []byte) error {
 }
 
 func (txn *Txn) modify(e *Entry) error {
-	const maxKeySize = 65000
+	const maxKeySize = 65000 // 为key后缀保留足够的空间
 
 	switch {
 	case !txn.update:
@@ -369,7 +369,7 @@ func (txn *Txn) modify(e *Entry) error {
 		return ErrDiscardedTxn
 	case len(e.Key) == 0:
 		return ErrEmptyKey
-	case bytes.HasPrefix(e.Key, badgerPrefix):
+	case bytes.HasPrefix(e.Key, badgerPrefix): // builtin key
 		return ErrInvalidKey
 	case len(e.Key) > maxKeySize:
 		// Key length can't be more than uint16, as determined by table::header.  To
@@ -535,8 +535,8 @@ func (txn *Txn) commitAndSend() (func() error, error) {
 	// the order in which we push these updates to the write channel. So, we
 	// acquire a writeChLock before getting a commit timestamp, and only release
 	// it after pushing the entries to it.
-	orc.writeChLock.Lock()
-	defer orc.writeChLock.Unlock()
+	orc.writeChLock.Lock()         // +锁
+	defer orc.writeChLock.Unlock() // -锁
 
 	commitTs, conflict := orc.newCommitTs(txn)
 	if conflict {

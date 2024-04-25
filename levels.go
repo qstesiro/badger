@@ -348,8 +348,7 @@ func (s *levelsController) dropPrefixes(prefixes [][]byte) error {
 }
 
 func (s *levelsController) startCompact(lc *z.Closer) {
-	// n := s.kv.opt.NumCompactors // for debug ???
-	n := 1                   // for debug ???
+	n := s.kv.opt.NumCompactors
 	lc.AddRunning(n - 1)     // 在NewCloser(1)的基础上增加n-1
 	for i := 0; i < n; i++ { // 启动n个协程
 		go s.runCompactor(i, lc)
@@ -1673,7 +1672,7 @@ func (s *levelsController) get(key []byte, maxVs y.ValueStruct, startLevel int) 
 			continue
 		}
 		y.NumBytesReadsLSMAdd(s.kv.opt.MetricsEnabled, int64(len(vs.Value)))
-		if vs.Version == version {
+		if vs.Version == version { // 精确匹配
 			return vs, nil
 		}
 		if maxVs.Version < vs.Version {
