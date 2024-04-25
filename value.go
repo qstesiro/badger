@@ -1068,10 +1068,8 @@ func discardEntry(e Entry, vs y.ValueStruct, db *DB) bool {
 	}
 
 	// 此情况只会由备份导致
-	// 在备份时使用了比原先更低的阈值
-	// 导致备份时数据导致备份数据被写到vlog中
-	// 而原来的数据还存储于lsm中
-	// 具体备份还需要进一步分析 // ???
+	// 在备份时使用了比原先更低的阈值导致备份时数据被写到vlog中
+	// 而原来的数据还存储于lsm中具体细节还需要进一步分析 // ???
 	if (vs.Meta & bitValuePointer) == 0 {
 		// Key also stores the value in LSM. Discard.
 		return true
