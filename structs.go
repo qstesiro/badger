@@ -158,13 +158,14 @@ func (e *Entry) isZero() bool {
 
 func (e *Entry) estimateSizeAndSetThreshold(threshold int64) int64 {
 	if e.valThreshold == 0 {
-		e.valThreshold = threshold
+		e.valThreshold = threshold // 设置新阈值
 	}
 	k := int64(len(e.Key))
 	v := int64(len(e.Value))
-	if v < e.valThreshold {
+	if v < e.valThreshold { // 写入lsm
 		return k + v + 2 // Meta, UserMeta
 	}
+	// 写入vlog
 	return k + 12 + 2 // 12 for ValuePointer, 2 for metas.
 }
 

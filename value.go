@@ -182,8 +182,8 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 	vlog.filesLock.RUnlock() // -锁
 
 	vlog.opt.Infof("Rewriting fid: %d", f.fid)
-	wb := make([]*Entry, 0, 1000)
-	var size int64
+	wb := make([]*Entry, 0, 1000) // 记录项个数
+	var size int64                // 记录数据大小
 
 	y.AssertTrue(vlog.db != nil)
 	var count, moved int
@@ -224,7 +224,7 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 		// NOTE: It might be possible that the entry read from the LSM Tree points to
 		// an older vlog file. See the comments in the else part.
 		if vp.Fid == f.fid && vp.Offset == e.offset { // 精确匹配
-			moved++
+			moved++ // 回写项个数
 			// This new entry only contains the key, and a pointer to the value.
 			ne := new(Entry)
 			// Remove only the bitValuePointer and transaction markers. We
@@ -238,6 +238,7 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 			// Consider size of value as well while considering the total size
 			// of the batch. There have been reports of high memory usage in
 			// rewrite because we don't consider the value size. See #1292.
+			// 当存储在lsm中,len(e.Value)*2,为了控制批次写入数据量 ???
 			es += int64(len(e.Value))
 
 			// Ensure length and size of wb is within transaction limits.
@@ -246,8 +247,8 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 				if err := vlog.db.batchSet(wb); err != nil {
 					return err
 				}
-				size = 0
-				wb = wb[:0]
+				size = 0    // 记录数据大小
+				wb = wb[:0] // 记录项个数
 			}
 			wb = append(wb, ne)
 			size += es
@@ -317,6 +318,8 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 		return err
 	}
 
+	// 对于剩余的项数量一定小于边界条件(maxBatchCount&&maxBatchSize)
+	// 所以一次batchSet就可以,为什么要设计这么个算法 ???
 	batchSize := 1024
 	var loops int
 	for i := 0; i < len(wb); {
@@ -351,6 +354,7 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 			vlog.filesLock.Unlock() // -锁
 			return errors.Errorf("Unable to find fid: %d", f.fid)
 		}
+		// 保证没有事务相关迭代器在扫描此vlog文件
 		if vlog.iteratorCount() == 0 {
 			delete(vlog.filesMap, f.fid)
 			deleteFileNow = true
@@ -403,10 +407,10 @@ func (vlog *valueLog) deleteLogFile(lf *logFile) error {
 	if lf == nil {
 		return nil
 	}
-	lf.lock.Lock()
-	defer lf.lock.Unlock()
+	lf.lock.Lock()         // +锁
+	defer lf.lock.Unlock() // -锁
 	// Delete fid from discard stats as well.
-	vlog.discardStats.Update(lf.fid, -1)
+	vlog.discardStats.Update(lf.fid, -1) // 删除对应的丢弃数据记录
 
 	return lf.Delete()
 }
