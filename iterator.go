@@ -275,14 +275,14 @@ func (item *Item) ExpiresAt() uint64 {
 }
 
 // TODO: Switch this to use linked list container in Go.
-type list struct {
+type list struct { // 队列
 	head *Item
 	tail *Item
 }
 
 func (l *list) push(i *Item) {
 	i.next = nil
-	if l.tail == nil {
+	if l.tail == nil { // 第一个元素
 		l.head = i
 		l.tail = i
 		return
@@ -296,10 +296,10 @@ func (l *list) pop() *Item {
 		return nil
 	}
 	i := l.head
-	if l.head == l.tail {
+	if l.head == l.tail { // pop后为空队列
 		l.tail = nil
 		l.head = nil
-	} else {
+	} else { // 指向下一个元素
 		l.head = i.next
 	}
 	i.next = nil

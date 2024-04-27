@@ -33,14 +33,14 @@ import (
 )
 
 type oracle struct {
-	isManaged       bool // Does not change value, so no locking required.
+	isManaged       bool // Does not change value, so no locking required. (是否用户管理启动,提交时间戳)
 	detectConflicts bool // Determines if the txns should be checked for conflicts.
 
 	sync.Mutex // For nextTxnTs and commits.
 	// writeChLock lock is for ensuring that transactions go to the write
 	// channel in the same order as their commit timestamps.
 	writeChLock sync.Mutex
-	nextTxnTs   uint64
+	nextTxnTs   uint64 // 自动管理时间戳,下一个事务的时间戳
 
 	// Used to block NewTransaction, so all previous commits are visible to a new read.
 	txnMark *y.WaterMark
@@ -248,8 +248,8 @@ func (o *oracle) doneCommit(cts uint64) {
 
 // Txn represents a Badger transaction.
 type Txn struct {
-	readTs   uint64
-	commitTs uint64
+	readTs   uint64 // 启始时间戳
+	commitTs uint64 // 提交时间戳
 	size     int64
 	count    int64
 	db       *DB
@@ -476,7 +476,7 @@ func (txn *Txn) Get(key []byte) (item *Item, rerr error) {
 	}
 
 	seek := y.KeyWithTs(key, txn.readTs)
-	vs, err := txn.db.get(seek)
+	vs, err := txn.db.get(seek) // 是否可以优化,精确匹配几乎不可能 ???
 	if err != nil {
 		return nil, y.Wrapf(err, "DB::Get key: %q", key)
 	}
@@ -488,7 +488,7 @@ func (txn *Txn) Get(key []byte) (item *Item, rerr error) {
 	}
 
 	item.key = key
-	item.version = vs.Version
+	item.version = vs.Version // version === ts
 	item.meta = vs.Meta
 	item.userMeta = vs.UserMeta
 	item.vptr = y.SafeCopy(item.vptr, vs.Value)
@@ -771,6 +771,7 @@ func (db *DB) NewTransaction(update bool) *Txn {
 func (db *DB) newTransaction(update, isManaged bool) *Txn {
 	if db.opt.ReadOnly && update {
 		// DB is read-only, force read-only transaction.
+		// opt.ReadOnly代表整个库只读所以强制变为只读
 		update = false
 	}
 
@@ -787,7 +788,7 @@ func (db *DB) newTransaction(update, isManaged bool) *Txn {
 		txn.pendingWrites = make(map[string]*Entry)
 	}
 	if !isManaged {
-		txn.readTs = db.orc.readTs()
+		txn.readTs = db.orc.readTs() // 设置启始时间戳作为读基线
 	}
 	return txn
 }
@@ -805,7 +806,7 @@ func (db *DB) View(fn func(txn *Txn) error) error {
 	} else {
 		txn = db.NewTransaction(false)
 	}
-	defer txn.Discard()
+	defer txn.Discard() // 丢弃
 
 	return fn(txn)
 }
@@ -827,5 +828,5 @@ func (db *DB) Update(fn func(txn *Txn) error) error {
 		return err
 	}
 
-	return txn.Commit()
+	return txn.Commit() // 提交
 }

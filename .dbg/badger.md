@@ -34,6 +34,9 @@
 
 ## query
 
+- item类型方法实现 --- ???
+- badger/v4.Iterator迭代器实现 --- ???
+
 ## compaction
 
 - levelsController --- ok
@@ -88,8 +91,13 @@
 
 ## tnx
 
+- oracle --- ???
+- Txn --- ???
+- pendingWritesIterator --- ???
 - 事务处理逻辑 --- ???
 - 迭代器Iterator --- ???
+- bannedKey --- ???
+- 用户管理时间戳 --- ???
 
 ## encrypt
 
