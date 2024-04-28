@@ -92,10 +92,10 @@ func (o *oracle) readTs() uint64 {
 	}
 
 	var readTs uint64
-	o.Lock()
+	o.Lock() // +锁
 	readTs = o.nextTxnTs - 1
 	o.readMark.Begin(readTs)
-	o.Unlock()
+	o.Unlock() // -锁
 
 	// Wait for all txns which have no conflicts, have been assigned a commit
 	// timestamp and are going through the write to value log and LSM tree
@@ -106,30 +106,30 @@ func (o *oracle) readTs() uint64 {
 }
 
 func (o *oracle) nextTs() uint64 {
-	o.Lock()
-	defer o.Unlock()
+	o.Lock()         // +锁
+	defer o.Unlock() // -锁
 	return o.nextTxnTs
 }
 
 func (o *oracle) incrementNextTs() {
-	o.Lock()
-	defer o.Unlock()
+	o.Lock()         // +锁
+	defer o.Unlock() // -锁
 	o.nextTxnTs++
 }
 
 // Any deleted or invalid versions at or below ts would be discarded during
 // compaction to reclaim disk space in LSM tree and thence value log.
 func (o *oracle) setDiscardTs(ts uint64) {
-	o.Lock()
-	defer o.Unlock()
+	o.Lock()         // +锁
+	defer o.Unlock() // -锁
 	o.discardTs = ts
 	o.cleanupCommittedTransactions()
 }
 
 func (o *oracle) discardAtOrBelow() uint64 {
 	if o.isManaged {
-		o.Lock()
-		defer o.Unlock()
+		o.Lock()         // +锁
+		defer o.Unlock() // -锁
 		return o.discardTs
 	}
 	return o.readMark.DoneUntil()
@@ -265,9 +265,10 @@ type Txn struct {
 	numIterators atomic.Int32
 	discarded    bool
 	doneRead     bool
-	update       bool // update is used to conditionally keep track of reads.
+	update       bool // update is used to conditionally keep track of reads. 是否是读写事务
 }
 
+// 实现y.Iterator接口
 type pendingWritesIterator struct {
 	entries  []*Entry
 	nextIdx  int
@@ -321,7 +322,7 @@ func (pi *pendingWritesIterator) Close() error {
 }
 
 func (txn *Txn) newPendingWritesIterator(reversed bool) *pendingWritesIterator {
-	if !txn.update || len(txn.pendingWrites) == 0 {
+	if !txn.update || len(txn.pendingWrites) == 0 { // 非读写事务或写操作为空
 		return nil
 	}
 	entries := make([]*Entry, 0, len(txn.pendingWrites))
@@ -329,7 +330,7 @@ func (txn *Txn) newPendingWritesIterator(reversed bool) *pendingWritesIterator {
 		entries = append(entries, e)
 	}
 	// Number of pending writes per transaction shouldn't be too big in general.
-	sort.Slice(entries, func(i, j int) bool {
+	sort.Slice(entries, func(i, j int) bool { // 升序排序
 		cmp := bytes.Compare(entries[i].Key, entries[j].Key)
 		if !reversed {
 			return cmp < 0
@@ -337,7 +338,7 @@ func (txn *Txn) newPendingWritesIterator(reversed bool) *pendingWritesIterator {
 		return cmp > 0
 	})
 	return &pendingWritesIterator{
-		readTs:   txn.readTs,
+		readTs:   txn.readTs, // 启始时间
 		entries:  entries,
 		reversed: reversed,
 	}
@@ -346,11 +347,11 @@ func (txn *Txn) newPendingWritesIterator(reversed bool) *pendingWritesIterator {
 func (txn *Txn) checkSize(e *Entry) error {
 	count := txn.count + 1
 	// Extra bytes for the version in key.
-	size := txn.size + e.estimateSizeAndSetThreshold(txn.db.valueThreshold()) + 10
+	size := txn.size + e.estimateSizeAndSetThreshold(txn.db.valueThreshold()) + 10 // 10代表版本估计大小
 	if count >= txn.db.opt.maxBatchCount || size >= txn.db.opt.maxBatchSize {
 		return ErrTxnTooBig
 	}
-	txn.count, txn.size = count, size
+	txn.count, txn.size = count, size // 记录项个数与数据大小
 	return nil
 }
 
@@ -765,7 +766,7 @@ func (txn *Txn) ReadTs() uint64 {
 //	defer txn.Discard()
 //	// Call various APIs.
 func (db *DB) NewTransaction(update bool) *Txn {
-	return db.newTransaction(update, false)
+	return db.newTransaction(update, false) // 系统管理版本
 }
 
 func (db *DB) newTransaction(update, isManaged bool) *Txn {
@@ -796,7 +797,7 @@ func (db *DB) newTransaction(update, isManaged bool) *Txn {
 // View executes a function creating and managing a read-only transaction for the user. Error
 // returned by the function is relayed by the View method.
 // If View is used with managed transactions, it would assume a read timestamp of MaxUint64.
-func (db *DB) View(fn func(txn *Txn) error) error {
+func (db *DB) View(fn func(txn *Txn) error) error { // 只读事务
 	if db.IsClosed() {
 		return ErrDBClosed
 	}
@@ -814,15 +815,15 @@ func (db *DB) View(fn func(txn *Txn) error) error {
 // Update executes a function, creating and managing a read-write transaction
 // for the user. Error returned by the function is relayed by the Update method.
 // Update cannot be used with managed transactions.
-func (db *DB) Update(fn func(txn *Txn) error) error {
+func (db *DB) Update(fn func(txn *Txn) error) error { // 读写事务
 	if db.IsClosed() {
 		return ErrDBClosed
 	}
-	if db.opt.managedTxns {
+	if db.opt.managedTxns { // 事务版本不能由用户管理
 		panic("Update can only be used with managedDB=false.")
 	}
 	txn := db.NewTransaction(true)
-	defer txn.Discard()
+	defer txn.Discard() // 丢弃
 
 	if err := fn(txn); err != nil {
 		return err

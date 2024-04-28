@@ -91,9 +91,11 @@
 
 ## tnx
 
+- y.WaterMark --- ok
+- pendingWritesIterator --- ok
 - oracle --- ???
 - Txn --- ???
-- pendingWritesIterator --- ???
+- z.MemHash --- ???
 - 事务处理逻辑 --- ???
 - 迭代器Iterator --- ???
 - bannedKey --- ???

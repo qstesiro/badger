@@ -143,7 +143,7 @@ func checkAndSetOptions(opt *Options) error {
 	if opt.InMemory && (opt.Dir != "" || opt.ValueDir != "") {
 		return errors.New("Cannot use badger in Disk-less mode with Dir or ValueDir set")
 	}
-	opt.maxBatchSize = (15 * opt.MemTableSize) / 100
+	opt.maxBatchSize = (15 * opt.MemTableSize) / 100 // (15*64M)/100=9.6M
 	opt.maxBatchCount = opt.maxBatchSize / int64(skl.MaxNodeSize)
 
 	// This is the maximum value, vlogThreshold can have if dynamic thresholding is enabled.
