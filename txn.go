@@ -52,7 +52,7 @@ type oracle struct {
 
 	// committedTxns contains all committed writes (contains fingerprints
 	// of keys written and their latest commit counter).
-	committedTxns []committedTxn
+	committedTxns []committedTxn // 读写冲突检测
 	lastCleanupTs uint64
 
 	// closer is used to stop watermarks.
@@ -92,15 +92,17 @@ func (o *oracle) readTs() uint64 {
 	}
 
 	var readTs uint64
-	o.Lock() // +锁
-	readTs = o.nextTxnTs - 1
-	o.readMark.Begin(readTs)
-	o.Unlock() // -锁
+	o.Lock()                 // +锁
+	readTs = o.nextTxnTs - 1 // 最近提交的事务id
+	o.readMark.Begin(readTs) // 设置启始时间戳
+	o.Unlock()               // -锁
 
 	// Wait for all txns which have no conflicts, have been assigned a commit
 	// timestamp and are going through the write to value log and LSM tree
 	// process. Not waiting here could mean that some txns which have been
 	// committed would not be read.
+	// 需要等待事务确实完成,事务在获取提交id与实际完成之间需要执行某些操作,
+	// 尤其是memtable写入是异步,所以需要等待
 	y.Check(o.txnMark.WaitForMark(context.Background(), readTs))
 	return readTs
 }
@@ -170,18 +172,18 @@ func (o *oracle) newCommitTs(txn *Txn) (uint64, bool) {
 	}
 
 	var ts uint64
-	if !o.isManaged {
-		o.doneRead(txn)
+	if !o.isManaged { // 系统管理
+		o.doneRead(txn) // 完成启始时间戳
 		o.cleanupCommittedTransactions()
 
 		// This is the general case, when user doesn't specify the read and commit ts.
 		ts = o.nextTxnTs
 		o.nextTxnTs++
-		o.txnMark.Begin(ts)
+		o.txnMark.Begin(ts) // 设置提交时间戳
 
-	} else {
+	} else { // 用户管理
 		// If commitTs is set, use it instead.
-		ts = txn.commitTs
+		ts = txn.commitTs // 直接使用已指定
 	}
 
 	y.AssertTrue(ts >= o.lastCleanupTs)
@@ -189,7 +191,7 @@ func (o *oracle) newCommitTs(txn *Txn) (uint64, bool) {
 	if o.detectConflicts {
 		// We should ensure that txns are not added to o.committedTxns slice when
 		// conflict detection is disabled otherwise this slice would keep growing.
-		o.committedTxns = append(o.committedTxns, committedTxn{
+		o.committedTxns = append(o.committedTxns, committedTxn{ // 添加要提交的事务读写冲突检测数据
 			ts:           ts,
 			conflictKeys: txn.conflictKeys,
 		})
@@ -201,7 +203,7 @@ func (o *oracle) newCommitTs(txn *Txn) (uint64, bool) {
 func (o *oracle) doneRead(txn *Txn) {
 	if !txn.doneRead {
 		txn.doneRead = true
-		o.readMark.Done(txn.readTs)
+		o.readMark.Done(txn.readTs) // 完成启始时间戳
 	}
 }
 
@@ -254,10 +256,10 @@ type Txn struct {
 	count    int64
 	db       *DB
 
-	reads []uint64 // contains fingerprints of keys read.
+	reads []uint64 // contains fingerprints of keys read. // 所有读操作key哈希
 	// contains fingerprints of keys written. This is used for conflict detection.
-	conflictKeys map[uint64]struct{}
-	readsLock    sync.Mutex // guards the reads slice. See addReadKey.
+	conflictKeys map[uint64]struct{} // 所有写操作key哈希
+	readsLock    sync.Mutex          // guards the reads slice. See addReadKey.
 
 	pendingWrites   map[string]*Entry // cache stores any writes done by txn.
 	duplicateWrites []*Entry          // Used in managed mode to store duplicate entries.
@@ -400,6 +402,8 @@ func (txn *Txn) modify(e *Entry) error {
 	// If a duplicate entry was inserted in managed mode, move it to the duplicate writes slice.
 	// Add the entry to duplicateWrites only if both the entries have different versions. For
 	// same versions, we will overwrite the existing entry.
+	// 普通调用写操作的情况下,此时version还没有被设置
+	// 所以不会添加到duplicateWrites,事务中相同key覆盖
 	if oldEntry, ok := txn.pendingWrites[string(e.Key)]; ok && oldEntry.version != e.version {
 		txn.duplicateWrites = append(txn.duplicateWrites, oldEntry)
 	}
@@ -456,7 +460,7 @@ func (txn *Txn) Get(key []byte) (item *Item, rerr error) {
 
 	item = new(Item)
 	if txn.update {
-		if e, has := txn.pendingWrites[string(key)]; has && bytes.Equal(key, e.Key) {
+		if e, has := txn.pendingWrites[string(key)]; has && bytes.Equal(key, e.Key) { // 获取当前事务写入的数据
 			if isDeletedOrExpired(e.meta, e.ExpiresAt) {
 				return nil, ErrKeyNotFound
 			}
@@ -518,7 +522,7 @@ func (txn *Txn) addReadKey(key []byte) {
 //
 // NOTE: If any operations are run on a discarded transaction, ErrDiscardedTxn is returned.
 func (txn *Txn) Discard() {
-	if txn.discarded { // Avoid a re-run.
+	if txn.discarded { // Avoid a re-run. 保护操作
 		return
 	}
 	if txn.numIterators.Load() > 0 {
@@ -539,7 +543,7 @@ func (txn *Txn) commitAndSend() (func() error, error) {
 	orc.writeChLock.Lock()         // +锁
 	defer orc.writeChLock.Unlock() // -锁
 
-	commitTs, conflict := orc.newCommitTs(txn)
+	commitTs, conflict := orc.newCommitTs(txn) // 获取提交时间戳并设置开始
 	if conflict {
 		return nil, ErrConflict
 	}
@@ -552,12 +556,12 @@ func (txn *Txn) commitAndSend() (func() error, error) {
 			keepTogether = false
 		}
 	}
-	for _, e := range txn.pendingWrites {
+	for _, e := range txn.pendingWrites { // 设置所有写入项的版本
 		setVersion(e)
 	}
 	// The duplicateWrites slice will be non-empty only if there are duplicate
 	// entries with different versions.
-	for _, e := range txn.duplicateWrites {
+	for _, e := range txn.duplicateWrites { // 设置所有重复项的版本
 		setVersion(e)
 	}
 
@@ -587,14 +591,15 @@ func (txn *Txn) commitAndSend() (func() error, error) {
 	// var b strings.Builder
 	// fmt.Fprintf(&b, "Read: %d. Commit: %d. reads: %v. writes: %v. Keys: ",
 	// 	txn.readTs, commitTs, txn.reads, txn.conflictKeys)
-	for _, e := range txn.pendingWrites {
+	// processEntry可以与setVersion合并,可以只循环一次,性能优化 ???
+	for _, e := range txn.pendingWrites { // 处理所有写入项
 		processEntry(e)
 	}
-	for _, e := range txn.duplicateWrites {
+	for _, e := range txn.duplicateWrites { // 处理所有重复项
 		processEntry(e)
 	}
 
-	if keepTogether {
+	if keepTogether { // 同一批数据附加一个事务结束值
 		// CommitTs should not be zero if we're inserting transaction markers.
 		y.AssertTrue(commitTs != 0)
 		e := &Entry{
@@ -615,7 +620,7 @@ func (txn *Txn) commitAndSend() (func() error, error) {
 		// Wait before marking commitTs as done.
 		// We can't defer doneCommit above, because it is being called from a
 		// callback here.
-		orc.doneCommit(commitTs)
+		orc.doneCommit(commitTs) // 完成提交时间戳
 		return err
 	}
 	return ret, nil
@@ -625,7 +630,7 @@ func (txn *Txn) commitPrecheck() error {
 	if txn.discarded {
 		return errors.New("Trying to commit a discarded txn")
 	}
-	keepTogether := true
+	keepTogether := true // ~~~
 	for _, e := range txn.pendingWrites {
 		if e.version != 0 {
 			keepTogether = false
@@ -681,7 +686,7 @@ func (txn *Txn) Commit() error {
 
 	// TODO: What if some of the txns successfully make it to value log, but others fail.
 	// Nothing gets updated to LSM, until a restart happens.
-	return txnCb()
+	return txnCb() // 等待写入memtable完成
 }
 
 type txnCb struct {
