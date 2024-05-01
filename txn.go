@@ -129,7 +129,7 @@ func (o *oracle) setDiscardTs(ts uint64) {
 }
 
 func (o *oracle) discardAtOrBelow() uint64 {
-	if o.isManaged {
+	if o.isManaged { // 用户管理
 		o.Lock()         // +锁
 		defer o.Unlock() // -锁
 		return o.discardTs
@@ -480,8 +480,8 @@ func (txn *Txn) Get(key []byte) (item *Item, rerr error) {
 		txn.addReadKey(key)
 	}
 
-	seek := y.KeyWithTs(key, txn.readTs)
-	vs, err := txn.db.get(seek) // 是否可以优化,精确匹配几乎不可能 ???
+	seek := y.KeyWithTs(key, txn.readTs) // 设置启始时间戳
+	vs, err := txn.db.get(seek)          // 是否可以优化,精确匹配几乎不可能 ???
 	if err != nil {
 		return nil, y.Wrapf(err, "DB::Get key: %q", key)
 	}
@@ -530,7 +530,7 @@ func (txn *Txn) Discard() {
 	}
 	txn.discarded = true
 	if !txn.db.orc.isManaged {
-		txn.db.orc.doneRead(txn)
+		txn.db.orc.doneRead(txn) // 完成启始时间戳
 	}
 }
 
@@ -599,12 +599,12 @@ func (txn *Txn) commitAndSend() (func() error, error) {
 		processEntry(e)
 	}
 
-	if keepTogether { // 同一批数据附加一个事务结束值
+	if keepTogether { // 同一批数据附加一个事务结束KV
 		// CommitTs should not be zero if we're inserting transaction markers.
 		y.AssertTrue(commitTs != 0)
 		e := &Entry{
 			Key:   y.KeyWithTs(txnKey, commitTs),
-			Value: []byte(strconv.FormatUint(commitTs, 10)),
+			Value: []byte(strconv.FormatUint(commitTs, 10)), // 结束值为事务提交时间戳
 			meta:  bitFinTxn,
 		}
 		entries = append(entries, e)

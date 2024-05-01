@@ -70,6 +70,10 @@
       - keyRange --- ok
 - levelHandler --- ok
 - draw compact flow --- ok
+- graph
+  - split compact --- ???
+  - parallel compact --- ???
+  - merge compact --- ???
 
 ## manifest
 
@@ -93,10 +97,10 @@
 
 - y.WaterMark --- ok
 - pendingWritesIterator --- ok
-- oracle --- ???
-- Txn --- ???
-- z.MemHash --- ???
-- 事务处理逻辑 --- ???
+- oracle --- ok
+- Txn --- ok
+- z.MemHash --- ok
+- 事务处理逻辑 --- ok
 - 迭代器Iterator --- ???
 - bannedKey --- ???
 - 用户管理时间戳 --- ???
@@ -106,3 +110,5 @@
 ## encrypt
 
 - keyregistry --- ???
+
+## compress

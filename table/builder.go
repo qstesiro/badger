@@ -138,7 +138,7 @@ func NewTableBuilder(opts Options) *Builder {
 	b.curBlock = &bblock{
 		data: b.alloc.Allocate(opts.BlockSize + padding),
 	}
-	b.opts.tableCapacity = uint64(float64(b.opts.TableSize) * 0.95)
+	b.opts.tableCapacity = uint64(float64(b.opts.TableSize) * 0.95) // 为什么取0.95 ???
 
 	// If encryption or compression is not enabled, do not start compression/encryption goroutines
 	// and write directly to the buffer.
@@ -366,6 +366,7 @@ func (b *Builder) addInternal(key []byte, value y.ValueStruct, valueLen uint32, 
 // at the end. The diff can vary.
 
 // ReachedCapacity returns true if we... roughly (?) reached capacity?
+// 预估大小是否过于粗略 ???
 func (b *Builder) ReachedCapacity() bool {
 	// If encryption/compression is enabled then use the compresssed size.
 	sumBlockSizes := b.compressedSize.Load()

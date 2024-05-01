@@ -724,7 +724,7 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 				if len(kr.right) > 0 && y.CompareKeys(it.Key(), kr.right) >= 0 { // 半开区间 [left,right)
 					break // 结束当前区间
 				}
-				if builder.ReachedCapacity() { // 到达容量边界
+				if builder.ReachedCapacity() { // 到达层级容量边界
 					// Only break if we are on a different key, and have reached capacity. We want
 					// to ensure that all versions of the key are stored in the same sstable, and
 					// not divided across multiple tables at the same level.
@@ -845,7 +845,7 @@ func (s *levelsController) subcompact(it y.Iterator, kr keyRange, cd compactDef,
 
 		bopts := buildTableOptions(s.kv)
 		// Set TableSize to the target file size for that level.
-		bopts.TableSize = uint64(cd.t.fileSz[cd.nextLevel.level])
+		bopts.TableSize = uint64(cd.t.fileSz[cd.nextLevel.level]) // 设置对应层文件大小
 		builder := table.NewTableBuilder(bopts)
 
 		// This would do the iteration and add keys to builder.
@@ -1087,8 +1087,8 @@ func (s *levelsController) addSplits(cd *compactDef) {
 	// In an edge case, 142 tables in bottom led to 48 splits. That's too many splits, because it
 	// then uses up a lot of memory for table builder.
 	// We should keep it so we have at max 5 splits.
-	width := int(math.Ceil(float64(len(cd.bot)) / 5.0))
-	if width < 3 {
+	width := int(math.Ceil(float64(len(cd.bot)) / 5.0)) // ceil向上取整
+	if width < 3 {                                      // 区间宽度最小为3
 		width = 3
 	}
 	skr := cd.thisRange
@@ -1105,8 +1105,8 @@ func (s *levelsController) addSplits(cd *compactDef) {
 		// last entry in bottom table.
 		if i == len(cd.bot)-1 {
 			addRange([]byte{})
-			// splits=[left0,right0)[left1,right1)...[leftn,{}) (当X>0, leftX=rightX-1)
-			// 最后的右边界没有保存 ???
+			// splits=[left0,right0)[left1,right1)...[leftn,{}) (当x>0, left[x]=right[x-1])
+			// 以{}代表最后一个区间左边界在压实操作中不会进行边界判定直到迭代结束
 			return
 		}
 		if i%width == width-1 {
@@ -1467,6 +1467,7 @@ func (s *levelsController) runCompactDef(id, l int, cd compactDef) (err error) {
 	y.AssertTrue(len(cd.splits) == 0)
 	if thisLevel.level == nextLevel.level {
 		// don't do anything for L0 -> L0 and Lmax -> Lmax.
+		// 同层(L0,Lmax)压实不需要分割区间
 	} else {
 		s.addSplits(&cd)
 	}
@@ -1516,7 +1517,7 @@ func (s *levelsController) runCompactDef(id, l int, cd compactDef) (err error) {
 	if err := nextLevel.replaceTables(cd.bot, newTables); err != nil { // 删除bot,添加newTables
 		return err
 	}
-	if err := thisLevel.deleteTables(cd.top); err != nil {
+	if err := thisLevel.deleteTables(cd.top); err != nil { // 删除top
 		return err
 	}
 
