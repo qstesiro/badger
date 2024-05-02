@@ -118,7 +118,7 @@ type DB struct {
 	isClosed    atomic.Uint32
 
 	orc              *oracle
-	bannedNamespaces *lockedKeys
+	bannedNamespaces *lockedKeys // 存储被禁用命名空间下的所有key
 	threshold        *vlogThreshold
 
 	pub        *publisher
@@ -415,7 +415,7 @@ func (db *DB) initBannedNamespaces() error {
 		itr := txn.NewIterator(iopts)
 		defer itr.Close()
 		for itr.Rewind(); itr.Valid(); itr.Next() {
-			key := y.BytesToU64(itr.Item().Key()[len(bannedNsKey):])
+			key := y.BytesToU64(itr.Item().Key()[len(bannedNsKey):]) // 排除前缀
 			db.bannedNamespaces.add(key)
 		}
 		return nil
@@ -1852,6 +1852,9 @@ func (db *DB) isBanned(key []byte) error {
 		return nil
 	}
 	if len(key) <= db.opt.NamespaceOffset+8 {
+		// +8是代表key后续(MaxUint64-ts)
+		// 此种情况代表排除后缀整个key长度小于NamespaceOffset
+		// 也就是key长度小于禁用命名前缀所以不可能匹配禁用前缀
 		return nil
 	}
 	if db.bannedNamespaces.has(y.BytesToU64(key[db.opt.NamespaceOffset:])) {
@@ -1867,7 +1870,8 @@ func (db *DB) BanNamespace(ns uint64) error {
 	}
 	db.opt.Infof("Banning namespace: %d", ns)
 	// First set the banned namespaces in DB and then update the in-memory structure.
-	key := y.KeyWithTs(append(bannedNsKey, y.U64ToBytes(ns)...), 1)
+	// y.U64ToBytes内部使用binary.PutUint64,所以命名空间最大8个字节多余字段被忽略
+	key := y.KeyWithTs(append(bannedNsKey, y.U64ToBytes(ns)...), 1) // ts = 1
 	entry := []*Entry{{
 		Key:   key,
 		Value: nil,

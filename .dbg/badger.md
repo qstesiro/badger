@@ -1,5 +1,10 @@
 # ISSUES
 
+## DB
+
+- stream
+- subscribe
+
 ## vlog
 
 - 写mmap不需要同步 --- ok
@@ -102,7 +107,8 @@
 - z.MemHash --- ok
 - 事务处理逻辑 --- ok
 - 迭代器Iterator --- ???
-- bannedKey --- ???
+- prefetch --- ???
+- bannedKey --- ok
 - 用户管理时间戳 --- ???
 - 批量写入 --- ???
 - keepTogether --- ???

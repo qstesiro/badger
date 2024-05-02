@@ -209,7 +209,7 @@ func (s *Skiplist) findNear(key []byte, less bool, allowEqual bool) (*node, bool
 		}
 
 		nextKey := next.key(s.arena)
-		cmp := y.CompareKeys(key, nextKey) // 首先比较key,相同再比较version
+		cmp := y.CompareKeys(key, nextKey) // 首先比较key,相同再比较suffix
 		if cmp > 0 {
 			// x.key < next.key < key. We can continue to move right.
 			x = next
@@ -383,7 +383,7 @@ func (s *Skiplist) findLast() *node {
 // Get gets the value associated with the key. It returns a valid value if it finds equal or earlier
 // version of the same key.
 func (s *Skiplist) Get(key []byte) y.ValueStruct {
-	n, _ := s.findNear(key, false, true) // findGreaterOrEqual(x>=key).
+	n, _ := s.findNear(key, false, true) // findGreaterOrEqual(n.ts<=key.ts).
 	if n == nil {
 		return y.ValueStruct{}
 	}

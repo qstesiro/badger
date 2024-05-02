@@ -481,7 +481,7 @@ func (txn *Txn) Get(key []byte) (item *Item, rerr error) {
 	}
 
 	seek := y.KeyWithTs(key, txn.readTs) // 设置启始时间戳
-	vs, err := txn.db.get(seek)          // 是否可以优化,精确匹配几乎不可能 ???
+	vs, err := txn.db.get(seek)          // vs.ts <= seek.ts
 	if err != nil {
 		return nil, y.Wrapf(err, "DB::Get key: %q", key)
 	}
