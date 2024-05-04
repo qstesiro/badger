@@ -466,10 +466,10 @@ func (txn *Txn) Get(key []byte) (item *Item, rerr error) {
 			}
 			// Fulfill from cache.
 			item.meta = e.meta
-			item.val = e.Value
+			item.val = e.Value // 使用val
 			item.userMeta = e.UserMeta
 			item.key = key
-			item.status = prefetched
+			item.status = prefetched // 设置预取状态
 			item.version = txn.readTs
 			item.expiresAt = e.ExpiresAt
 			// We probably don't need to set db on item here.
@@ -496,7 +496,7 @@ func (txn *Txn) Get(key []byte) (item *Item, rerr error) {
 	item.version = vs.Version // version === ts
 	item.meta = vs.Meta
 	item.userMeta = vs.UserMeta
-	item.vptr = y.SafeCopy(item.vptr, vs.Value)
+	item.vptr = y.SafeCopy(item.vptr, vs.Value) // 使用vptr
 	item.txn = txn
 	item.expiresAt = vs.ExpiresAt
 	return item, nil

@@ -40,9 +40,9 @@ const (
 // iterator.Next() is called.
 type Item struct {
 	key       []byte
-	vptr      []byte
-	val       []byte
-	version   uint64
+	vptr      []byte // 数据在memtable,sst或vlog中使用
+	val       []byte // 数据在未提交状态处理于pending中使用
+	version   uint64 // ts
 	expiresAt uint64
 
 	slice *y.Slice // Used only during prefetching.
@@ -77,7 +77,7 @@ func (item *Item) KeyCopy(dst []byte) []byte {
 }
 
 // Version returns the commit timestamp of the item.
-func (item *Item) Version() uint64 {
+func (item *Item) Version() uint64 { // ts
 	return item.version
 }
 
@@ -93,7 +93,7 @@ func (item *Item) Version() uint64 {
 // Use ValueCopy if you want to do a Set after Get.
 func (item *Item) Value(fn func(val []byte) error) error {
 	item.wg.Wait()
-	if item.status == prefetched {
+	if item.status == prefetched { // 预取状态下代表数据未提交处理pending状态使用val字段
 		if item.err == nil && fn != nil {
 			if err := fn(item.val); err != nil {
 				return err
@@ -101,7 +101,7 @@ func (item *Item) Value(fn func(val []byte) error) error {
 		}
 		return item.err
 	}
-	buf, cb, err := item.yieldItemValue()
+	buf, cb, err := item.yieldItemValue() // 数据在memtable,sst或vlog中使用vptr字段
 	defer runCallback(cb)
 	if err != nil {
 		return err
@@ -147,7 +147,7 @@ func (item *Item) DiscardEarlierVersions() bool {
 	return item.meta&bitDiscardEarlierVersions > 0
 }
 
-func (item *Item) yieldItemValue() ([]byte, func(), error) {
+func (item *Item) yieldItemValue() ([]byte, func(), error) { // 数据存储在memtable,sst或vlog中
 	key := item.Key() // No need to copy.
 	if !item.hasValue() {
 		return nil, nil, nil
@@ -157,16 +157,16 @@ func (item *Item) yieldItemValue() ([]byte, func(), error) {
 		item.slice = new(y.Slice)
 	}
 
-	if (item.meta & bitValuePointer) == 0 {
+	if (item.meta & bitValuePointer) == 0 { // 数据在memtable,sst中
 		val := item.slice.Resize(len(item.vptr))
 		copy(val, item.vptr)
 		return val, nil, nil
 	}
 
-	var vp valuePointer
+	var vp valuePointer // 数据在vlog中
 	vp.Decode(item.vptr)
 	db := item.txn.db
-	result, cb, err := db.vlog.Read(vp, item.slice)
+	result, cb, err := db.vlog.Read(vp, item.slice) // Read函数中item.slice参数未使用
 	if err != nil {
 		db.opt.Errorf("Unable to read: Key: %v, Version : %v, meta: %v, userMeta: %v"+
 			" Error: %v", key, item.version, item.meta, item.userMeta, err)
@@ -233,13 +233,13 @@ func (item *Item) EstimatedSize() int64 {
 	}
 	var vp valuePointer
 	vp.Decode(item.vptr)
-	return int64(vp.Len) // includes key length.
+	return int64(vp.Len) // includes key length. 包含header,key,value,crc32
 }
 
 // KeySize returns the size of the key.
 // Exact size of the key is key + 8 bytes of timestamp
 func (item *Item) KeySize() int64 {
-	return int64(len(item.key))
+	return int64(len(item.key)) // 不包含suffix
 }
 
 // ValueSize returns the approximate size of the value.
@@ -250,7 +250,7 @@ func (item *Item) ValueSize() int64 {
 	if !item.hasValue() {
 		return 0
 	}
-	if (item.meta & bitValuePointer) == 0 {
+	if (item.meta & bitValuePointer) == 0 { // in sst
 		return int64(len(item.vptr))
 	}
 	var vp valuePointer

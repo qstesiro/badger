@@ -28,6 +28,7 @@
   - sstable entry format --- ok
   - sstable index format --- ok
   - flushMemTable (SSTable) --- ok
+  - diffKey使用 --- ???
   - table --- ok
     - OpenTable逻辑 --- ok
     - 分析blockIterator --- ok
@@ -106,7 +107,7 @@
 - Txn --- ok
 - z.MemHash --- ok
 - 事务处理逻辑 --- ok
-- 迭代器Iterator --- ???
+- 迭代器Iterator,item --- ???
 - prefetch --- ???
 - bannedKey --- ok
 - 用户管理时间戳 --- ???

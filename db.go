@@ -757,7 +757,9 @@ func (db *DB) getMemTables() ([]*memTable, func()) {
 // for "fooX" in all the levels of the LSM tree. This is expensive but it
 // removes the overhead of handling move keys completely.
 //
-// 首先精确匹配,否则返回最新版
+// 首先精确匹配,否则返回版本小于等于key的数据
+// - 数据在memtable返回引用
+// - 数据在sst返回拷贝
 func (db *DB) get(key []byte) (y.ValueStruct, error) {
 	if db.IsClosed() {
 		return y.ValueStruct{}, ErrDBClosed
@@ -770,7 +772,7 @@ func (db *DB) get(key []byte) (y.ValueStruct, error) {
 
 	y.NumGetsAdd(db.opt.MetricsEnabled, 1)
 	for i := 0; i < len(tables); i++ {
-		vs := tables[i].sl.Get(key)
+		vs := tables[i].sl.Get(key) // 引用
 		y.NumMemtableGetsAdd(db.opt.MetricsEnabled, 1)
 		if vs.Meta == 0 && vs.Value == nil {
 			continue
@@ -784,7 +786,7 @@ func (db *DB) get(key []byte) (y.ValueStruct, error) {
 			maxVs = vs
 		}
 	}
-	return db.lc.get(key, maxVs, 0)
+	return db.lc.get(key, maxVs, 0) // 拷贝
 }
 
 var requestPool = sync.Pool{

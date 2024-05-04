@@ -386,16 +386,16 @@ func (vlog *valueLog) decrIteratorCount() error {
 		return nil
 	}
 
-	vlog.filesLock.Lock()
+	vlog.filesLock.Lock() // +锁
 	lfs := make([]*logFile, 0, len(vlog.filesToBeDeleted))
 	for _, id := range vlog.filesToBeDeleted {
 		lfs = append(lfs, vlog.filesMap[id])
 		delete(vlog.filesMap, id)
 	}
 	vlog.filesToBeDeleted = nil
-	vlog.filesLock.Unlock()
+	vlog.filesLock.Unlock() // -锁
 
-	for _, lf := range lfs {
+	for _, lf := range lfs { // 删除已经被重写的vlog
 		if err := vlog.deleteLogFile(lf); err != nil {
 			return err
 		}
@@ -412,7 +412,7 @@ func (vlog *valueLog) deleteLogFile(lf *logFile) error {
 	// Delete fid from discard stats as well.
 	vlog.discardStats.Update(lf.fid, -1) // 删除对应的丢弃数据记录
 
-	return lf.Delete()
+	return lf.Delete() // 删除文件
 }
 
 func (vlog *valueLog) dropAll() (int, error) {
@@ -959,7 +959,7 @@ func (vlog *valueLog) Read(vp valuePointer, _ *y.Slice) ([]byte, func(), error) 
 		return nil, cb, err
 	}
 
-	if vlog.opt.VerifyValueChecksum {
+	if vlog.opt.VerifyValueChecksum { // 检查校验和
 		hash := crc32.New(y.CastagnoliCrcTable)
 		if _, err := hash.Write(buf[:len(buf)-crc32.Size]); err != nil {
 			runCallback(cb)
@@ -975,7 +975,7 @@ func (vlog *valueLog) Read(vp valuePointer, _ *y.Slice) ([]byte, func(), error) 
 	var h header
 	headerLen := h.Decode(buf)
 	kv := buf[headerLen:]
-	if lf.encryptionEnabled() {
+	if lf.encryptionEnabled() { // 解密
 		kv, err = lf.decryptKV(kv, vp.Offset)
 		if err != nil {
 			return nil, cb, err
@@ -1001,7 +1001,7 @@ func (vlog *valueLog) getUnlockCallback(lf *logFile) func() {
 // readValueBytes return vlog entry slice and read locked log file. Caller should take care of
 // logFile unlocking.
 func (vlog *valueLog) readValueBytes(vp valuePointer) ([]byte, *logFile, error) {
-	lf, err := vlog.getFileRLocked(vp)
+	lf, err := vlog.getFileRLocked(vp) // 查找到锁定文件
 	if err != nil {
 		return nil, nil, err
 	}
