@@ -599,7 +599,7 @@ func (txn *Txn) commitAndSend() (func() error, error) {
 		processEntry(e)
 	}
 
-	if keepTogether { // 同一批数据附加一个事务结束KV
+	if keepTogether { // 同一批数据附加一个事务结束项(附加项只在vlog,wal中存储,内存中不存储)
 		// CommitTs should not be zero if we're inserting transaction markers.
 		y.AssertTrue(commitTs != 0)
 		e := &Entry{

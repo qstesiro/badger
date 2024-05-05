@@ -91,6 +91,9 @@ func (item *Item) Version() uint64 { // ts
 // If you need to use a value outside a transaction, please use Item.ValueCopy
 // instead, or copy it yourself. Value might change once discard or commit is called.
 // Use ValueCopy if you want to do a Set after Get.
+//
+// 通过item获取值可能因为gc导致vptr所指向的数据已经被重写并且旧的vlog文件已经被删除
+// 此种情况会导致数据读取失败(不太确定分析是否正常,需要进一步模拟场景重现问题) ???
 func (item *Item) Value(fn func(val []byte) error) error {
 	item.wg.Wait()
 	if item.status == prefetched { // 预取状态下代表数据未提交处理pending状态使用val字段
@@ -118,6 +121,9 @@ func (item *Item) Value(fn func(val []byte) error) error {
 //
 // This function is useful in long running iterate/update transactions to avoid a write deadlock.
 // See Github issue: https://github.com/dgraph-io/badger/issues/315
+//
+// 通过item获取值可能因为gc导致vptr所指向的数据已经被重写并且旧的vlog文件已经被删除
+// 此种情况会导致数据读取失败(不太确定分析是否正常,需要进一步模拟场景重现问题) ???
 func (item *Item) ValueCopy(dst []byte) ([]byte, error) {
 	item.wg.Wait()
 	if item.status == prefetched {

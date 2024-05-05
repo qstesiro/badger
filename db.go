@@ -782,6 +782,9 @@ func (db *DB) get(key []byte) (y.ValueStruct, error) {
 			y.NumGetsWithResultsAdd(db.opt.MetricsEnabled, 1)
 			return vs, nil
 		}
+		// 此处不断判断最大版本是因为GC会重写vlog文件数据
+		// 导致更旧的版本出现在更新版本的上层
+		// 所以需要一直查询到sst的最后一层才能确定真正的最新版本
 		if maxVs.Version < vs.Version {
 			maxVs = vs
 		}
@@ -817,7 +820,7 @@ func (db *DB) writeToLSM(b *request) error {
 					// to be retrieved during iterator prefetch. `bitValuePointer` is only
 					// known to be set in write to LSM when the entry is loaded from a backup
 					// with lower ValueThreshold and its value was stored in the value log.
-					Meta:      entry.meta &^ bitValuePointer,
+					Meta:      entry.meta &^ bitValuePointer, // 去掉vlog标志位
 					UserMeta:  entry.UserMeta,
 					ExpiresAt: entry.ExpiresAt,
 				})
@@ -825,8 +828,8 @@ func (db *DB) writeToLSM(b *request) error {
 			// Write pointer to Memtable.
 			err = db.mt.Put(entry.Key,
 				y.ValueStruct{
-					Value:     b.Ptrs[i].Encode(), // 写值指针
-					Meta:      entry.meta | bitValuePointer,
+					Value:     b.Ptrs[i].Encode(),           // 写值指针
+					Meta:      entry.meta | bitValuePointer, // 设置vlog标志位
 					UserMeta:  entry.UserMeta,
 					ExpiresAt: entry.ExpiresAt,
 				})
@@ -858,7 +861,7 @@ func (db *DB) writeRequests(reqs []*request) error {
 	// 所以可能导致vlog写入数据一定是多于wal存储,
 	// 重新启动后总会创建一个新的vlog,所以wal恢复数据会写入新的vlog
 	// 前一次的vlog中多余的数据不会被使用
-	err := db.vlog.write(reqs)
+	err := db.vlog.write(reqs) // 对于超过阈值的数据写入vlog文件
 	if err != nil {
 		done(err)
 		return err
@@ -887,7 +890,8 @@ func (db *DB) writeRequests(reqs []*request) error {
 			done(err)
 			return y.Wrap(err, "writeRequests")
 		}
-		if err := db.writeToLSM(b); err != nil {
+		// 一次写入一个事务的所有数据,保证同一个事务的数据都写在同一个memtable中
+		if err := db.writeToLSM(b); err != nil { // 写lsm
 			done(err)
 			return y.Wrap(err, "writeRequests")
 		}

@@ -68,14 +68,6 @@ var errTruncate = errors.New("Do truncate")
 
 type logEntry func(e Entry, vp valuePointer) error
 
-type safeRead struct {
-	k []byte
-	v []byte
-
-	recordOffset uint32
-	lf           *logFile
-}
-
 // hashReader implements io.Reader, io.ByteReader interfaces. It also keeps track of the number
 // bytes read. The hashReader writes to h (hash) what it reads from r.
 type hashReader struct {
@@ -112,6 +104,14 @@ func (t *hashReader) ReadByte() (byte, error) {
 // Sum32 returns the sum32 of the underlying hash.
 func (t *hashReader) Sum32() uint32 {
 	return t.h.Sum32()
+}
+
+type safeRead struct {
+	k []byte
+	v []byte
+
+	recordOffset uint32
+	lf           *logFile
 }
 
 // Entry reads an entry from the provided reader. It also validates the checksum for every entry
@@ -229,7 +229,8 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 			ne := new(Entry)
 			// Remove only the bitValuePointer and transaction markers. We
 			// should keep the other bits.
-			ne.meta = e.meta &^ (bitValuePointer | bitTxn | bitFinTxn)
+			// 去掉bitValuePointer因为重写数据时会根据当前的阈值大小判定数据是否写入vlog
+			ne.meta = e.meta &^ (bitValuePointer | bitTxn | bitFinTxn) // 去掉事务相关标志位
 			ne.UserMeta = e.UserMeta
 			ne.ExpiresAt = e.ExpiresAt
 			ne.Key = append([]byte{}, e.Key...)
@@ -312,7 +313,7 @@ func (vlog *valueLog) rewrite(f *logFile) error {
 	}
 
 	_, err := f.iterate(vlog.opt.ReadOnly, 0, func(e Entry, vp valuePointer) error {
-		return fe(e)
+		return fe(e) // 未使用vp参数
 	})
 	if err != nil {
 		return err
@@ -811,10 +812,10 @@ func (vlog *valueLog) write(reqs []*request) error {
 		return y.Wrapf(err, "while validating writes")
 	}
 
-	vlog.filesLock.RLock()
+	vlog.filesLock.RLock() // +锁
 	maxFid := vlog.maxFid
 	curlf := vlog.filesMap[maxFid]
-	vlog.filesLock.RUnlock()
+	vlog.filesLock.RUnlock() // -锁
 
 	defer func() {
 		if vlog.opt.SyncWrites {
@@ -877,7 +878,7 @@ func (vlog *valueLog) write(reqs []*request) error {
 				b.Ptrs = append(b.Ptrs, valuePointer{})
 				continue
 			}
-			var p valuePointer
+			var p valuePointer // 值存储到vlog
 
 			p.Fid = curlf.fid
 			p.Offset = vlog.woffset()
@@ -888,7 +889,7 @@ func (vlog *valueLog) write(reqs []*request) error {
 			// But, we still want the entry to stay intact for the memTable WAL. So, store the meta
 			// in a temporary variable and reassign it after writing to the value log.
 			tmpMeta := e.meta
-			e.meta = e.meta &^ (bitTxn | bitFinTxn)
+			e.meta = e.meta &^ (bitTxn | bitFinTxn)          // 去掉事务相关标志位
 			plen, err := curlf.encodeEntry(buf, e, p.Offset) // Now encode the entry into buffer.
 			if err != nil {
 				return err
@@ -1079,7 +1080,7 @@ func discardEntry(e Entry, vs y.ValueStruct, db *DB) bool {
 		return true
 	}
 
-	if (vs.Meta & bitFinTxn) > 0 { // ~~~
+	if (vs.Meta & bitFinTxn) > 0 { // 事务附加结束项
 		// Just a txn finish entry. Discard.
 		return true
 	}

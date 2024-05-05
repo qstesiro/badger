@@ -295,6 +295,9 @@ func (s *levelHandler) get(key []byte) (y.ValueStruct, error) {
 			continue
 		}
 		if y.SameKey(key, it.Key()) {
+			// 此处不断判断最大版本是因为GC会重写vlog文件数据
+			// 导致更旧的版本出现在更新版本的上层
+			// 所以需要一直查询到sst的最后一层才能确定真正的最新版本
 			if version := y.ParseTs(it.Key()); maxVs.Version < version {
 				maxVs = it.ValueCopy()
 				maxVs.Version = version

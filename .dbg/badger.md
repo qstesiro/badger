@@ -10,6 +10,7 @@
 - 写mmap不需要同步 --- ok
 - vlogThreshold大小[通过metric动态计算] --- ok
 - vlogThreshold变更时机 --- ok
+- valueLog.write --- ???
 
 ## memtable
 
@@ -108,7 +109,7 @@
 - z.MemHash --- ok
 - 事务处理逻辑 --- ok
 - 迭代器Iterator,item --- ???
-- prefetch --- ???
+- prefetch --- ok
 - bannedKey --- ok
 - 用户管理时间戳 --- ???
 - 批量写入 --- ???

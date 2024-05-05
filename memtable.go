@@ -198,7 +198,7 @@ func (mt *memTable) Put(key []byte, value y.ValueStruct) error {
 		}
 	}
 	// We insert the finish marker in the WAL but not in the memtable.
-	if entry.meta&bitFinTxn > 0 {
+	if entry.meta&bitFinTxn > 0 { // 过滤掉事务结束附加的项,附加项只在vlog,wal中存储,内存中不存储
 		return nil
 	}
 
@@ -447,6 +447,8 @@ func (lf *logFile) doneWriting(offset uint32) error {
 
 // iterate iterates over log file. It doesn't not allocate new memory for every kv pair.
 // Therefore, the kv pair is only valid for the duration of fn call.
+// 有事务标志位的数据是wal
+// 无事务标志位的数据是vlog
 func (lf *logFile) iterate(readOnly bool, offset uint32, fn logEntry) (uint32, error) {
 	if offset == 0 {
 		// If offset is set to zero, let's advance past the encryption key header.
@@ -495,7 +497,7 @@ loop:
 		vp.Fid = lf.fid
 
 		switch {
-		case e.meta&bitTxn > 0:
+		case e.meta&bitTxn > 0: // 同一事务数据项,wal文件中数据
 			txnTs := y.ParseTs(e.Key)
 			if lastCommit == 0 {
 				lastCommit = txnTs
@@ -503,10 +505,11 @@ loop:
 			if lastCommit != txnTs {
 				break loop
 			}
+			// 暂存同一个事务中的所有数据
 			entries = append(entries, e)
 			vptrs = append(vptrs, vp)
 
-		case e.meta&bitFinTxn > 0:
+		case e.meta&bitFinTxn > 0: // 事务结束附加项,wal文件中数据(附加项只在vlog,wal中存储,内存中不存储)
 			txnTs, err := strconv.ParseUint(string(e.Value), 10, 64)
 			if err != nil || lastCommit != txnTs {
 				break loop
@@ -515,7 +518,7 @@ loop:
 			lastCommit = 0
 			validEndOffset = read.recordOffset
 
-			for i, e := range entries {
+			for i, e := range entries { // 回调数据
 				vp := vptrs[i]
 				if err := fn(*e, vp); err != nil {
 					if err == errStop {
@@ -527,7 +530,7 @@ loop:
 			entries = entries[:0]
 			vptrs = vptrs[:0]
 
-		default:
+		default: // vlog文件中数据
 			if lastCommit != 0 {
 				// This is most likely an entry which was moved as part of GC.
 				// We shouldn't get this entry in the middle of a transaction.
