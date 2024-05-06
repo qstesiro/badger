@@ -94,6 +94,7 @@ type TableInterface interface {
 }
 
 // Table represents a loaded table file with the info we have about it.
+// 实现TableIterface接口
 type Table struct {
 	sync.Mutex
 	*z.MmapFile
