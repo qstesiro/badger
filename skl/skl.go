@@ -479,6 +479,7 @@ func (s *Iterator) SeekToLast() {
 // Iterator. We like to keep Iterator as before, because it is more powerful and
 // we might support bidirectional iterators in the future.
 // 包装类型,支持正向或反向遍历
+// 实现y.Iterator接口
 type UniIterator struct {
 	iter     *Iterator
 	reversed bool

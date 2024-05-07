@@ -310,8 +310,8 @@ func (s *levelHandler) get(key []byte) (y.ValueStruct, error) {
 // appendIterators appends iterators to an array of iterators, for merging.
 // Note: This obtains references for the table handlers. Remember to close these iterators.
 func (s *levelHandler) appendIterators(iters []y.Iterator, opt *IteratorOptions) []y.Iterator {
-	s.RLock()
-	defer s.RUnlock()
+	s.RLock()         // +锁
+	defer s.RUnlock() // -锁
 
 	var topt int
 	if opt.Reverse {

@@ -473,6 +473,10 @@ type Iterator struct {
 // iterator was created. If writes are performed after an iterator is created, then that iterator
 // will not be able to see those writes. Only writes performed before an iterator was created can be
 // viewed.
+// 合并三种不同类型数据
+// - 当前事务未提交的数据
+// - memtable(可变,不可变)
+// - sstable
 func (txn *Txn) NewIterator(opt IteratorOptions) *Iterator {
 	if txn.discarded {
 		panic(ErrDiscardedTxn)
@@ -488,8 +492,8 @@ func (txn *Txn) NewIterator(opt IteratorOptions) *Iterator {
 
 	// TODO: If Prefix is set, only pick those memtables which have keys with the prefix.
 	tables, decr := txn.db.getMemTables()
-	defer decr()
-	txn.db.vlog.incrIteratorCount()
+	defer decr()                    // -1
+	txn.db.vlog.incrIteratorCount() // +1
 	var iters []y.Iterator
 	if itr := txn.newPendingWritesIterator(opt.Reverse); itr != nil {
 		iters = append(iters, itr)
@@ -521,7 +525,7 @@ func (txn *Txn) NewKeyIterator(key []byte, opt IteratorOptions) *Iterator {
 }
 
 func (it *Iterator) newItem() *Item {
-	item := it.waste.pop()
+	item := it.waste.pop() // 复用item
 	if item == nil {
 		item = &Item{slice: new(y.Slice), txn: it.txn}
 	}
@@ -560,7 +564,7 @@ func (it *Iterator) Close() {
 	}
 	it.closed = true
 	if it.iitr == nil {
-		it.txn.numIterators.Add(-1)
+		it.txn.numIterators.Add(-1) // -1
 		return
 	}
 
@@ -578,8 +582,8 @@ func (it *Iterator) Close() {
 	waitFor(it.data)
 
 	// TODO: We could handle this error.
-	_ = it.txn.db.vlog.decrIteratorCount()
-	it.txn.numIterators.Add(-1)
+	_ = it.txn.db.vlog.decrIteratorCount() // -1
+	it.txn.numIterators.Add(-1)            // -1
 }
 
 // Next would advance the iterator by one. Always check it.Valid() after a Next()
@@ -589,8 +593,8 @@ func (it *Iterator) Next() {
 		return
 	}
 	// Reuse current item
-	it.item.wg.Wait() // Just cleaner to wait before pushing to avoid doing ref counting.
-	it.scanned += len(it.item.key) + len(it.item.val) + len(it.item.vptr) + 2
+	it.item.wg.Wait()                                                         // Just cleaner to wait before pushing to avoid doing ref counting.
+	it.scanned += len(it.item.key) + len(it.item.val) + len(it.item.vptr) + 2 // size(meta+usermeta) = 2
 	it.waste.push(it.item)
 
 	// Set next item to current
@@ -635,21 +639,21 @@ func (it *Iterator) parseItem() bool {
 
 	isInternalKey := bytes.HasPrefix(key, badgerPrefix)
 	// Skip badger keys.
-	if !it.opt.InternalAccess && isInternalKey {
+	if !it.opt.InternalAccess && isInternalKey { // 跳过内部key
 		mi.Next()
 		return false
 	}
 
 	// Skip any versions which are beyond the readTs.
-	version := y.ParseTs(key)
+	version := y.ParseTs(key) // version === ts
 	// Ignore everything that is above the readTs and below or at the sinceTs.
-	if version > it.readTs || (it.opt.SinceTs > 0 && version <= it.opt.SinceTs) {
+	if version > it.readTs || (it.opt.SinceTs > 0 && version <= it.opt.SinceTs) { // key时间范围(since<ts<=read)
 		mi.Next()
 		return false
 	}
 
 	// Skip banned keys only if it does not have badger internal prefix.
-	if !isInternalKey && it.txn.db.isBanned(key) != nil {
+	if !isInternalKey && it.txn.db.isBanned(key) != nil { // 跳过禁用key
 		mi.Next()
 		return false
 	}
