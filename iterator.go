@@ -51,8 +51,8 @@ type Item struct {
 
 	err      error
 	wg       sync.WaitGroup
-	status   prefetchStatus
-	meta     byte // We need to store meta to know about bitValuePointer.
+	status   prefetchStatus // 是否已经将vptr中数据进行处理存储在val中
+	meta     byte           // We need to store meta to know about bitValuePointer.
 	userMeta byte
 }
 
@@ -473,7 +473,7 @@ type Iterator struct {
 // iterator was created. If writes are performed after an iterator is created, then that iterator
 // will not be able to see those writes. Only writes performed before an iterator was created can be
 // viewed.
-// 合并三种不同类型数据
+// 合并三种不同类型数据迭代器
 // - 当前事务未提交的数据
 // - memtable(可变,不可变)
 // - sstable
@@ -488,7 +488,7 @@ func (txn *Txn) NewIterator(opt IteratorOptions) *Iterator {
 	y.NumIteratorsCreatedAdd(txn.db.opt.MetricsEnabled, 1)
 
 	// Keep track of the number of active iterators.
-	txn.numIterators.Add(1)
+	txn.numIterators.Add(1) // +1
 
 	// TODO: If Prefix is set, only pick those memtables which have keys with the prefix.
 	tables, decr := txn.db.getMemTables()
@@ -536,7 +536,7 @@ func (it *Iterator) newItem() *Item {
 // This item is only valid until it.Next() gets called.
 func (it *Iterator) Item() *Item {
 	tx := it.txn
-	tx.addReadKey(it.item.Key())
+	tx.addReadKey(it.item.Key()) // 添加到已读缓存中用于写偏序判定
 	return it.item
 }
 
@@ -593,7 +593,7 @@ func (it *Iterator) Next() {
 		return
 	}
 	// Reuse current item
-	it.item.wg.Wait()                                                         // Just cleaner to wait before pushing to avoid doing ref counting.
+	it.item.wg.Wait()                                                         // Just cleaner to wait before pushing to avoid doing ref counting. (保证当前item预取结束)
 	it.scanned += len(it.item.key) + len(it.item.val) + len(it.item.vptr) + 2 // size(meta+usermeta) = 2
 	it.waste.push(it.item)
 
@@ -671,7 +671,7 @@ func (it *Iterator) parseItem() bool {
 	// If iterating in forward direction, then just checking the last key against current key would
 	// be sufficient.
 	if !it.opt.Reverse {
-		if y.SameKey(it.lastKey, key) {
+		if y.SameKey(it.lastKey, key) { // 相同key只返回最新版本
 			mi.Next()
 			return false
 		}
@@ -721,22 +721,22 @@ func (it *Iterator) fill(item *Item) {
 	item.expiresAt = vs.ExpiresAt
 
 	item.version = y.ParseTs(it.iitr.Key())
-	item.key = y.SafeCopy(item.key, y.ParseKey(it.iitr.Key()))
+	item.key = y.SafeCopy(item.key, y.ParseKey(it.iitr.Key())) // 不包含suffix部分
 
 	item.vptr = y.SafeCopy(item.vptr, vs.Value)
 	item.val = nil
-	if it.opt.PrefetchValues {
-		item.wg.Add(1)
-		go func() {
+	if it.opt.PrefetchValues { // 解析vptr将数据存储到val中
+		item.wg.Add(1) // +1
+		go func() {    // 异步预取数据
 			// FIXME we are not handling errors here.
 			item.prefetchValue()
-			item.wg.Done()
+			item.wg.Done() // -1
 		}()
 	}
 }
 
 func (it *Iterator) prefetch() {
-	prefetchSize := 2
+	prefetchSize := 2 // 默认预取2个(是不是有点少)
 	if it.opt.PrefetchValues && it.opt.PrefetchSize > 1 {
 		prefetchSize = it.opt.PrefetchSize
 	}
