@@ -433,8 +433,8 @@ func (opt *IteratorOptions) pickTables(all []*table.Table) []*table.Table {
 
 // DefaultIteratorOptions contains default options when iterating over Badger key-value stores.
 var DefaultIteratorOptions = IteratorOptions{
-	PrefetchValues: true,
-	PrefetchSize:   100,
+	PrefetchValues: true, // 启动预取
+	PrefetchSize:   100,  // 默认预取数据
 	Reverse:        false,
 	AllVersions:    false,
 }
@@ -493,7 +493,7 @@ func (txn *Txn) NewIterator(opt IteratorOptions) *Iterator {
 	// TODO: If Prefix is set, only pick those memtables which have keys with the prefix.
 	tables, decr := txn.db.getMemTables()
 	defer decr()                    // -1
-	txn.db.vlog.incrIteratorCount() // +1
+	txn.db.vlog.incrIteratorCount() // +1 禁止vlog文件删除
 	var iters []y.Iterator
 	if itr := txn.newPendingWritesIterator(opt.Reverse); itr != nil {
 		iters = append(iters, itr)
@@ -545,7 +545,7 @@ func (it *Iterator) Valid() bool {
 	if it.item == nil {
 		return false
 	}
-	if it.opt.prefixIsKey {
+	if it.opt.prefixIsKey { // 是否完全相等
 		return bytes.Equal(it.item.key, it.opt.Prefix)
 	}
 	return bytes.HasPrefix(it.item.key, it.opt.Prefix)
@@ -582,7 +582,7 @@ func (it *Iterator) Close() {
 	waitFor(it.data)
 
 	// TODO: We could handle this error.
-	_ = it.txn.db.vlog.decrIteratorCount() // -1
+	_ = it.txn.db.vlog.decrIteratorCount() // -1 允许vlog文件删除
 	it.txn.numIterators.Add(-1)            // -1
 }
 
@@ -598,9 +598,9 @@ func (it *Iterator) Next() {
 	it.waste.push(it.item)
 
 	// Set next item to current
-	it.item = it.data.pop()
+	it.item = it.data.pop() // 取一个item
 	for it.iitr.Valid() {
-		if it.parseItem() {
+		if it.parseItem() { // 补一个item
 			// parseItem calls one extra next.
 			// This is used to deal with the complexity of reverse iteration.
 			break
@@ -627,7 +627,7 @@ func isDeletedOrExpired(meta byte, expiresAt uint64) bool {
 // This function advances the iterator.
 func (it *Iterator) parseItem() bool {
 	mi := it.iitr
-	key := mi.Key()
+	key := mi.Key() // 获取当前key
 
 	setItem := func(item *Item) {
 		if it.item == nil {
@@ -685,8 +685,8 @@ func (it *Iterator) parseItem() bool {
 
 FILL:
 	// If deleted, advance and return.
-	vs := mi.Value()
-	if isDeletedOrExpired(vs.Meta, vs.ExpiresAt) {
+	vs := mi.Value() // 获取当前val
+	if isDeletedOrExpired(vs.Meta, vs.ExpiresAt) { // 跳过已删除(超时)
 		mi.Next()
 		return false
 	}
@@ -736,9 +736,9 @@ func (it *Iterator) fill(item *Item) {
 }
 
 func (it *Iterator) prefetch() {
-	prefetchSize := 2 // 默认预取2个(是不是有点少)
+	prefetchSize := 2 // 未启用预取内部实际也启用只是预取比较少
 	if it.opt.PrefetchValues && it.opt.PrefetchSize > 1 {
-		prefetchSize = it.opt.PrefetchSize
+		prefetchSize = it.opt.PrefetchSize // 默认PrefetchSize=100
 	}
 
 	i := it.iitr
@@ -763,30 +763,30 @@ func (it *Iterator) Seek(key []byte) {
 		return
 	}
 	if len(key) > 0 {
-		it.txn.addReadKey(key)
+		it.txn.addReadKey(key) // 添加到已读缓存中用于写偏序判定
 	}
 	for i := it.data.pop(); i != nil; i = it.data.pop() {
 		i.wg.Wait()
 		it.waste.push(i)
 	}
 
-	it.lastKey = it.lastKey[:0]
+	it.lastKey = it.lastKey[:0] // 清空lastKey
 	if len(key) == 0 {
-		key = it.opt.Prefix
+		key = it.opt.Prefix // 按前缀迭代
 	}
-	if len(key) == 0 {
+	if len(key) == 0 { // 未指定key的情况下直接倒回到开始
 		it.iitr.Rewind()
-		it.prefetch()
+		it.prefetch() // 预取数据
 		return
 	}
 
 	if !it.opt.Reverse {
-		key = y.KeyWithTs(key, it.txn.readTs)
+		key = y.KeyWithTs(key, it.txn.readTs) // 限定事务启始时间戳
 	} else {
 		key = y.KeyWithTs(key, 0)
 	}
 	it.iitr.Seek(key)
-	it.prefetch()
+	it.prefetch() // 预取数据
 }
 
 // Rewind would rewind the iterator cursor all the way to zero-th position, which would be the
