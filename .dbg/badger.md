@@ -35,7 +35,7 @@
     - 分析blockIterator --- ok
     - 分析表Iterator --- ok
     - 分析ConcatIterator --- ok
-    - 分析MergeIterator --- ok
+    - 分析MergeIterator --- ???
     - table.block函数 --- ok
     - table,block引用计数 --- ok
 
@@ -108,7 +108,8 @@
 - Txn --- ok
 - z.MemHash --- ok
 - 事务处理逻辑 --- ok
-- 迭代器Iterator,item --- ???
+- item --- ok
+- Iterator(normal, keyonly, prefix) --- ok
 - prefetch --- ok
 - bannedKey --- ok
 - 用户管理时间戳 --- ???

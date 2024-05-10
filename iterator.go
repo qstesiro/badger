@@ -474,7 +474,7 @@ type Iterator struct {
 // will not be able to see those writes. Only writes performed before an iterator was created can be
 // viewed.
 // 合并三种不同类型数据迭代器
-// - 当前事务未提交的数据
+// - pendingWrites(当前事务未提交数据)
 // - memtable(可变,不可变)
 // - sstable
 func (txn *Txn) NewIterator(opt IteratorOptions) *Iterator {
@@ -723,9 +723,9 @@ func (it *Iterator) fill(item *Item) {
 	item.version = y.ParseTs(it.iitr.Key())
 	item.key = y.SafeCopy(item.key, y.ParseKey(it.iitr.Key())) // 不包含suffix部分
 
-	item.vptr = y.SafeCopy(item.vptr, vs.Value)
-	item.val = nil
-	if it.opt.PrefetchValues { // 解析vptr将数据存储到val中
+	item.vptr = y.SafeCopy(item.vptr, vs.Value) // 数据写入vptr
+	item.val = nil                              // 设置val为nil
+	if it.opt.PrefetchValues {                  // 解析vptr将数据存储到val中
 		item.wg.Add(1) // +1
 		go func() {    // 异步预取数据
 			// FIXME we are not handling errors here.
@@ -765,7 +765,7 @@ func (it *Iterator) Seek(key []byte) {
 	if len(key) > 0 {
 		it.txn.addReadKey(key) // 添加到已读缓存中用于写偏序判定
 	}
-	for i := it.data.pop(); i != nil; i = it.data.pop() {
+	for i := it.data.pop(); i != nil; i = it.data.pop() { // 清空预取数据
 		i.wg.Wait()
 		it.waste.push(i)
 	}
