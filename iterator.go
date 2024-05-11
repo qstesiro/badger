@@ -548,12 +548,17 @@ func (it *Iterator) Valid() bool {
 	if it.opt.prefixIsKey { // 是否完全相等
 		return bytes.Equal(it.item.key, it.opt.Prefix)
 	}
+	// 默认情况下it.opt.Prefix为空串
 	return bytes.HasPrefix(it.item.key, it.opt.Prefix)
 }
 
 // ValidForPrefix returns false when iteration is done
 // or when the current key is not prefixed by the specified prefix.
 func (it *Iterator) ValidForPrefix(prefix []byte) bool {
+	// 当前key有三种情况
+	// - key=target完全匹配prefix
+	// - key>=target且匹配prefix
+	// - key>=target但不匹配prefix(代表结束)
 	return it.Valid() && bytes.HasPrefix(it.item.key, prefix)
 }
 
