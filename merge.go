@@ -61,11 +61,11 @@ func (db *DB) GetMergeOperator(key []byte,
 var errNoMerge = errors.New("No need for merge")
 
 func (op *MergeOperator) iterateAndMerge() (newVal []byte, latest uint64, err error) {
-	txn := op.db.NewTransaction(false)
+	txn := op.db.NewTransaction(false) // 只读事务
 	defer txn.Discard()
 	opt := DefaultIteratorOptions
-	opt.AllVersions = true
-	it := txn.NewKeyIterator(op.key, opt)
+	opt.AllVersions = true                // NewKeyIterator内容设置AllVersions=true
+	it := txn.NewKeyIterator(op.key, opt) // 迭代指定key
 	defer it.Close()
 
 	var numVersions int
