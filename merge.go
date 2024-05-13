@@ -81,12 +81,12 @@ func (op *MergeOperator) iterateAndMerge() (newVal []byte, latest uint64, err er
 			if err != nil {
 				return nil, 0, err
 			}
-			latest = item.Version()
+			latest = item.Version() // 找到的第一个是最新版本
 		} else {
 			if err := item.Value(func(oldVal []byte) error {
 				// The merge should always be on the newVal considering it has the merge result of
 				// the latest version. The value read should be the oldVal.
-				newVal = op.f(oldVal, newVal)
+				newVal = op.f(oldVal, newVal) // 追加
 				return nil
 			}); err != nil {
 				return nil, 0, err
@@ -105,8 +105,8 @@ func (op *MergeOperator) iterateAndMerge() (newVal []byte, latest uint64, err er
 }
 
 func (op *MergeOperator) compact() error {
-	op.Lock()
-	defer op.Unlock()
+	op.Lock()         // +锁
+	defer op.Unlock() // -锁
 	val, version, err := op.iterateAndMerge()
 	if err == ErrKeyNotFound || err == errNoMerge {
 		return nil
@@ -162,8 +162,8 @@ func (op *MergeOperator) Add(val []byte) error {
 //
 // If Add has not been called even once, Get will return ErrKeyNotFound.
 func (op *MergeOperator) Get() ([]byte, error) {
-	op.RLock()
-	defer op.RUnlock()
+	op.RLock()         // +锁
+	defer op.RUnlock() // -锁
 	var existing []byte
 	err := op.db.View(func(txn *Txn) (err error) {
 		existing, _, err = op.iterateAndMerge()
