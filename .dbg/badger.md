@@ -109,12 +109,19 @@
 - z.MemHash --- ok
 - 事务处理逻辑 --- ok
 - item --- ok
-- Iterator(normal, keyonly, prefix) --- ok
+- Iterator(normal, keyonly, prefix, key) --- ok
 - prefetch --- ok
 - bannedKey --- ok
 - 用户管理时间戳 --- ???
 - 批量写入 --- ???
 - keepTogether --- ???
+
+## merge
+
+- merge --- ok
+
+## stream
+
 
 ## encrypt
 
