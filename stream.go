@@ -108,10 +108,10 @@ func (st *Stream) ToList(key []byte, itr *Iterator) (*pb.KVList, error) {
 	list := &pb.KVList{}
 	for ; itr.Valid(); itr.Next() {
 		item := itr.Item()
-		if item.IsDeletedOrExpired() {
+		if item.IsDeletedOrExpired() { // 过滤已删除(超期)数据
 			break
 		}
-		if !bytes.Equal(key, item.Key()) {
+		if !bytes.Equal(key, item.Key()) { // 当前key已经结束
 			// Break out on the first encounter with another key.
 			break
 		}
@@ -119,7 +119,7 @@ func (st *Stream) ToList(key []byte, itr *Iterator) (*pb.KVList, error) {
 		kv := y.NewKV(a)
 		kv.Key = ka
 
-		if err := item.Value(func(val []byte) error {
+		if err := item.Value(func(val []byte) error { // 获取值
 			kv.Value = a.Copy(val)
 			return nil
 
@@ -131,11 +131,11 @@ func (st *Stream) ToList(key []byte, itr *Iterator) (*pb.KVList, error) {
 		kv.UserMeta = a.Copy([]byte{item.UserMeta()})
 
 		list.Kv = append(list.Kv, kv)
-		if st.db.opt.NumVersionsToKeep == 1 {
+		if st.db.opt.NumVersionsToKeep == 1 { // 只保留最新版本
 			break
 		}
 
-		if item.DiscardEarlierVersions() {
+		if item.DiscardEarlierVersions() { // 只保留最新版本
 			break
 		}
 	}
@@ -165,8 +165,8 @@ func (st *Stream) produceRanges(ctx context.Context) {
 
 // produceKVs picks up ranges from rangeCh, generates KV lists and sends them to kvChan.
 func (st *Stream) produceKVs(ctx context.Context, threadId int) error {
-	st.numProducers.Add(1)
-	defer st.numProducers.Add(-1)
+	st.numProducers.Add(1)        // +1
+	defer st.numProducers.Add(-1) // -1
 
 	var txn *Txn
 	if st.readTs > 0 {
@@ -177,7 +177,7 @@ func (st *Stream) produceKVs(ctx context.Context, threadId int) error {
 	defer txn.Discard()
 
 	// produceKVs is running iterate serially. So, we can define the outList here.
-	outList := z.NewBuffer(2*batchSize, "Stream.ProduceKVs")
+	outList := z.NewBuffer(2*batchSize, "Stream.ProduceKVs") // 32m
 	defer func() {
 		// The outList variable changes. So, we need to evaluate the variable in the defer. DO NOT
 		// call `defer outList.Release()`.
@@ -204,7 +204,7 @@ func (st *Stream) produceKVs(ctx context.Context, threadId int) error {
 		sendIt := func() error {
 			select {
 			case st.kvChan <- outList:
-				outList = z.NewBuffer(2*batchSize, "Stream.ProduceKVs")
+				outList = z.NewBuffer(2*batchSize, "Stream.ProduceKVs") // 32m
 				st.scanned.Add(uint64(itr.scanned - scanned))
 				scanned = itr.scanned
 			case <-ctx.Done():
@@ -224,18 +224,18 @@ func (st *Stream) produceKVs(ctx context.Context, threadId int) error {
 			prevKey = append(prevKey[:0], item.Key()...)
 
 			// Check if we reached the end of the key range.
-			if len(kr.right) > 0 && bytes.Compare(item.Key(), kr.right) >= 0 {
+			if len(kr.right) > 0 && bytes.Compare(item.Key(), kr.right) >= 0 { // 边界判定
 				break
 			}
 
 			// Check if we should pick this key.
-			if st.ChooseKey != nil && !st.ChooseKey(item) {
+			if st.ChooseKey != nil && !st.ChooseKey(item) { // 判定是否过滤
 				continue
 			}
 
 			// Now convert to key value.
 			itr.Alloc.Reset()
-			list, err := st.KeyToList(item.KeyCopy(nil), itr)
+			list, err := st.KeyToList(item.KeyCopy(nil), itr) // 获取key的所有版本
 			if err != nil {
 				st.db.opt.Warningf("While reading key: %x, got error: %v", item.Key(), err)
 				continue
@@ -249,7 +249,7 @@ func (st *Stream) produceKVs(ctx context.Context, threadId int) error {
 				if outList.LenNoPadding() < batchSize {
 					continue
 				}
-				if err := sendIt(); err != nil {
+				if err := sendIt(); err != nil { // outList已满进行发送
 					return err
 				}
 			}

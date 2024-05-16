@@ -1726,7 +1726,7 @@ type TableInfo struct {
 
 func (s *levelsController) getTableInfo() (result []TableInfo) {
 	for _, l := range s.levels { // 二维转一维
-		l.RLock()
+		l.RLock() // +锁
 		for _, t := range l.tables {
 			info := TableInfo{
 				ID:               t.ID(),
@@ -1743,7 +1743,7 @@ func (s *levelsController) getTableInfo() (result []TableInfo) {
 			}
 			result = append(result, info)
 		}
-		l.RUnlock()
+		l.RUnlock() // -锁
 	}
 	sort.Slice(result, func(i, j int) bool { // 按级别(升级)同级按id(升序)
 		if result[i].Level != result[j].Level {
