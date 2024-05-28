@@ -48,7 +48,7 @@ func newArena(n int64) *Arena {
 	return out
 }
 
-func (s *Arena) size() int64 {
+func (s *Arena) size() int64 { // 当前已用大小
 	return int64(s.n.Load())
 }
 

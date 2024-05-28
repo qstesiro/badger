@@ -324,7 +324,7 @@ func (st *Stream) streamKVs(ctx context.Context) error {
 					break loop
 				}
 				y.AssertTrue(kvs != nil)
-				y.Check2(batch.Write(kvs.Bytes()))
+				y.Check2(batch.Write(kvs.Bytes())) // 累积数据到>=maxStreamSize(100m)
 				y.Check(kvs.Release())
 
 			default:
@@ -343,7 +343,7 @@ outer:
 		case <-ctx.Done():
 			return ctx.Err()
 
-		case <-t.C:
+		case <-t.C: // 进行速率统计
 			// Instead of calculating speed over the entire lifetime, we average the speed over
 			// ticker duration.
 			writeRate.Capture(bytesSent)
