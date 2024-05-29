@@ -54,7 +54,7 @@ type node struct {
 	// can be atomically loaded and stored:
 	//   value offset: uint32 (bits 0-31)
 	//   value size  : uint16 (bits 32-63)
-	value atomic.Uint64
+	value atomic.Uint64 // 整合到一起为了原子化处理
 
 	// A byte slice is 24 bytes. We are trying to save space here.
 	keyOffset uint32 // Immutable. No need to lock to access key.
@@ -116,7 +116,7 @@ func newNode(arena *Arena, key []byte, v y.ValueStruct, height int) *node {
 }
 
 func encodeValue(valOffset uint32, valSize uint32) uint64 {
-	return uint64(valSize)<<32 | uint64(valOffset)
+	return uint64(valSize)<<32 | uint64(valOffset) // 大小 | 偏移
 }
 
 func decodeValue(value uint64) (valOffset uint32, valSize uint32) {

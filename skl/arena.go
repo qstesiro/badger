@@ -39,6 +39,21 @@ type Arena struct {
 	buf []byte
 }
 
+/**********************************************************************************
+
+                                n      存储最大结束点
+                                offset 返回实际启始点
+
+                     启始点
+                       |  最大启始点                 最大结束点
+    	               |      |---------- node ----------|
+    #------------------+------+--------------------------+-------------------------
+    |                     |---------- node ----------|
+  空指针              实际启始点                实际结束点
+                      (8字节对齐)
+
+**********************************************************************************/
+
 // newArena returns a new arena.
 func newArena(n int64) *Arena {
 	// Don't store data at position 0 in order to reserve offset=0 as a kind
@@ -107,7 +122,7 @@ func (s *Arena) getNode(offset uint32) *node {
 		return nil
 	}
 
-	return (*node)(unsafe.Pointer(&s.buf[offset]))
+	return (*node)(unsafe.Pointer(&s.buf[offset])) // 类型强转
 }
 
 // getKey returns byte slice at offset.
