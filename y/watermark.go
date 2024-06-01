@@ -26,6 +26,7 @@ import (
 
 type uint64Heap []uint64
 
+// 所有方法都使用指针接收器也没有问题,只是使用麻烦
 func (u uint64Heap) Len() int            { return len(u) }
 func (u uint64Heap) Less(i, j int) bool  { return u[i] < u[j] }
 func (u uint64Heap) Swap(i, j int)       { u[i], u[j] = u[j], u[i] }
@@ -69,7 +70,7 @@ type WaterMark struct {
 // Init initializes a WaterMark struct. MUST be called before using it.
 func (w *WaterMark) Init(closer *z.Closer) {
 	w.markCh = make(chan mark, 100)
-	go w.process(closer)
+	go w.process(closer) // 启动主处理逻辑
 }
 
 // Begin sets the last index to the given value.
@@ -152,9 +153,9 @@ func (w *WaterMark) process(closer *z.Closer) {
 			heap.Push(&indices, index)
 		}
 
-		delta := 1
+		delta := 1 // +1
 		if done {
-			delta = -1
+			delta = -1 // -1
 		}
 		pending[index] = prev + delta
 
@@ -166,7 +167,7 @@ func (w *WaterMark) process(closer *z.Closer) {
 		}
 
 		until := doneUntil
-		loops := 0
+		loops := 0 // 没有实际作用 ???
 
 		for len(indices) > 0 {
 			min := indices[0]
@@ -182,7 +183,7 @@ func (w *WaterMark) process(closer *z.Closer) {
 		}
 
 		if until != doneUntil {
-			AssertTrue(w.doneUntil.CompareAndSwap(doneUntil, until))
+			AssertTrue(w.doneUntil.CompareAndSwap(doneUntil, until)) // 设置新doneUntil
 		}
 
 		notifyAndRemove := func(idx uint64, toNotify []chan struct{}) {
@@ -228,10 +229,10 @@ func (w *WaterMark) process(closer *z.Closer) {
 					}
 				}
 			} else {
-				if mark.index > 0 {
+				if mark.index > 0 { // 处理单个
 					processOne(mark.index, mark.done)
 				}
-				for _, index := range mark.indices {
+				for _, index := range mark.indices { // 处理多个
 					processOne(index, mark.done)
 				}
 			}
